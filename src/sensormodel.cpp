@@ -11,7 +11,7 @@ QVariant SensorModel::data(const QModelIndex &index, int role) const
 {
     if (!index.isValid() || index.row() >= size())
         return {};
-    const Entry &e = m_entries[size_t(index.row())];
+    const Entry &e = entry(index.row());
     switch (role) {
     case Qt::DisplayRole:
     case NameRole:
@@ -25,6 +25,8 @@ QVariant SensorModel::data(const QModelIndex &index, int role) const
                          : QStringLiteral("01 %1").arg(e.pid, 2, 16, QLatin1Char('0')).toUpper();
     case ActiveRole:
         return e.active;
+    case PinnedRole:
+        return e.pinned;
     case AvailableRole:
         return e.available;
     case SeriesRole:
@@ -36,9 +38,10 @@ QVariant SensorModel::data(const QModelIndex &index, int role) const
 
 bool SensorModel::setData(const QModelIndex &index, const QVariant &value, int role)
 {
-    if (!index.isValid() || index.row() >= size() || role != ActiveRole)
+    if (!index.isValid() || index.row() >= size() || (role != ActiveRole && role != PinnedRole))
         return false;
-    setActive(index.row(), value.toBool());
+    if (setFlag(index.row(), Role(role), value.toBool()))
+        emit selectionChanged();
     return true;
 }
 
@@ -55,6 +58,7 @@ QHash<int, QByteArray> SensorModel::roleNames() const
         {UnitRole, "unit"},
         {PidTextRole, "pidText"},
         {ActiveRole, "active"},
+        {PinnedRole, "pinned"},
         {AvailableRole, "available"},
         {SeriesRole, "series"},
     };
@@ -67,7 +71,7 @@ void SensorModel::setEntries(std::vector<Entry> entries)
         e.series->deleteLater();
     m_entries = std::move(entries);
     endResetModel();
-    emit activeChanged();
+    emit selectionChanged();
 }
 
 void SensorModel::clear()
@@ -75,52 +79,63 @@ void SensorModel::clear()
     setEntries({});
 }
 
-void SensorModel::setActive(int row, bool active)
+bool SensorModel::setFlag(int row, Role role, bool on)
 {
     Entry &e = entry(row);
-    if (e.active == active)
-        return;
-    e.active = active;
+    bool &flag = role == ActiveRole ? e.active : role == PinnedRole ? e.pinned : e.available;
+    if (flag == on)
+        return false;
+    flag = on;
     const QModelIndex i = index(row);
-    emit dataChanged(i, i, {ActiveRole});
-    emit activeChanged();
+    emit dataChanged(i, i, {role});
+    return true;
 }
 
-void SensorModel::setAllActive(bool active)
+void SensorModel::setActive(int row, bool active)
 {
-    for (int row = 0; row < size(); ++row) {
-        Entry &e = entry(row);
-        if (e.active != active) {
-            e.active = active;
-            const QModelIndex i = index(row);
-            emit dataChanged(i, i, {ActiveRole});
-        }
-    }
-    emit activeChanged();
+    if (setFlag(row, ActiveRole, active))
+        emit selectionChanged();
+}
+
+void SensorModel::setPinned(int row, bool pinned)
+{
+    if (setFlag(row, PinnedRole, pinned))
+        emit selectionChanged();
 }
 
 void SensorModel::setAvailable(int row, bool available)
 {
-    Entry &e = entry(row);
-    if (e.available == available)
-        return;
-    e.available = available;
-    const QModelIndex i = index(row);
-    emit dataChanged(i, i, {AvailableRole});
+    if (setFlag(row, AvailableRole, available))
+        emit selectionChanged();
 }
 
-QStringList SensorModel::activeKeys() const
+void SensorModel::setAll(Role role, bool on)
+{
+    bool changed = false;
+    for (int row = 0; row < size(); ++row)
+        changed = setFlag(row, role, on) || changed;
+    if (changed)
+        emit selectionChanged();
+}
+
+QStringList SensorModel::keys(Role role) const
 {
     QStringList keys;
     for (const Entry &e : m_entries) {
-        if (e.active)
+        if ((role == ActiveRole && e.active) || (role == PinnedRole && e.pinned))
             keys << e.key;
     }
     return keys;
 }
 
-bool ActiveSensorModel::filterAcceptsRow(int sourceRow, const QModelIndex &sourceParent) const
+SensorFilterModel::SensorFilterModel(SensorModel::Role role, QObject *parent)
+    : QSortFilterProxyModel(parent)
+    , m_role(role)
+{
+}
+
+bool SensorFilterModel::filterAcceptsRow(int sourceRow, const QModelIndex &sourceParent) const
 {
     const QModelIndex i = sourceModel()->index(sourceRow, 0, sourceParent);
-    return i.data(SensorModel::ActiveRole).toBool() && i.data(SensorModel::AvailableRole).toBool();
+    return i.data(m_role).toBool() && i.data(SensorModel::AvailableRole).toBool();
 }

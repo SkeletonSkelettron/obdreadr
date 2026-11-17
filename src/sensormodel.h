@@ -8,7 +8,8 @@
 
 class SensorSeries;
 
-// Every sensor the car reported, with whether the user wants it charted.
+// Every sensor the car reported, with whether the user wants it charted
+// (active) and whether it is one of the few compared and shown big (pinned).
 class SensorModel : public QAbstractListModel
 {
     Q_OBJECT
@@ -20,6 +21,7 @@ public:
         UnitRole,
         PidTextRole,
         ActiveRole,
+        PinnedRole,
         AvailableRole,
         SeriesRole,
     };
@@ -29,10 +31,13 @@ public:
         int pid = -1;          // mode 01 PID, -1 for the adapter voltage
         bool favorite = false;
         bool active = false;
+        bool pinned = false;
         bool available = true; // false once the car keeps answering NO DATA
         int misses = 0;
         qint64 lastPollMs = -1000000;
         SensorSeries *series = nullptr;
+
+        bool polled() const { return (active || pinned) && available; }
     };
 
     using QAbstractListModel::QAbstractListModel;
@@ -47,27 +52,36 @@ public:
     void clear();
     int size() const { return int(m_entries.size()); }
     Entry &entry(int row) { return m_entries[size_t(row)]; }
+    const Entry &entry(int row) const { return m_entries[size_t(row)]; }
 
     void setActive(int row, bool active);
-    void setAllActive(bool active);
+    void setPinned(int row, bool pinned);
+    void setAll(Role role, bool on);
     void setAvailable(int row, bool available);
-    QStringList activeKeys() const;
+    QStringList keys(Role role) const;
 
 signals:
-    void activeChanged();
+    // Active, pinned or available changed for some sensor.
+    void selectionChanged();
 
 private:
+    bool setFlag(int row, Role role, bool on);
+
     std::vector<Entry> m_entries;
 };
 
-// The sensors shown on the dashboard: chosen by the user and still answering.
-class ActiveSensorModel : public QSortFilterProxyModel
+// The available sensors that have one flag set: the active ones for the
+// charts and values tabs, the pinned ones for the overlay and big tabs.
+class SensorFilterModel : public QSortFilterProxyModel
 {
     Q_OBJECT
 
 public:
-    using QSortFilterProxyModel::QSortFilterProxyModel;
+    SensorFilterModel(SensorModel::Role role, QObject *parent = nullptr);
 
 protected:
     bool filterAcceptsRow(int sourceRow, const QModelIndex &sourceParent) const override;
+
+private:
+    SensorModel::Role m_role;
 };

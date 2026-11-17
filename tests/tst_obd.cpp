@@ -1,3 +1,4 @@
+#include "obd/dtc.h"
 #include "obd/elmparser.h"
 #include "obd/pids.h"
 #include "obd/simecu.h"
@@ -142,6 +143,67 @@ private slots:
         QCOMPARE(elm::errorIn(ask(ecu, QStringLiteral("010A"))), QStringLiteral("NO DATA"));
         QCOMPARE(elm::parseVin(ask(ecu, QStringLiteral("0902"))), SimEcu::vin());
         QCOMPARE(*elm::parseVoltage(ask(ecu, QStringLiteral("ATRV"))), 14.1);
+    }
+
+    void decodesTroubleCodes()
+    {
+        QCOMPARE(dtc::fromBytes(0x01, 0x33), QStringLiteral("P0133"));
+        QCOMPARE(dtc::fromBytes(0x44, 0x20), QStringLiteral("C0420"));
+        QCOMPARE(dtc::fromBytes(0x9A, 0xBC), QStringLiteral("B1ABC"));
+        QCOMPARE(dtc::fromBytes(0xC1, 0x00), QStringLiteral("U0100"));
+    }
+
+    void parsesTroubleCodeAnswers()
+    {
+        // CAN, one frame: count byte, then pairs.
+        QCOMPARE(dtc::parse({QStringLiteral("43 02 01 33 04 20")}, 0x03),
+                 (QStringList{QStringLiteral("P0133"), QStringLiteral("P0420")}));
+        QCOMPARE(dtc::parse({QStringLiteral("4300")}, 0x03), QStringList());
+        // CAN, multi-frame, with padding after the last code.
+        const QStringList multi = {
+            QStringLiteral("00A"),
+            QStringLiteral("0: 43 04 01 33 04 20"),
+            QStringLiteral("1: 01 71 03 01 55 55 55"),
+        };
+        QCOMPARE(dtc::parse(multi, 0x03),
+                 (QStringList{QStringLiteral("P0133"), QStringLiteral("P0420"), QStringLiteral("P0171"),
+                              QStringLiteral("P0301")}));
+        // Older protocols: three codes per line, zero padded; two ECUs.
+        const QStringList legacy = {
+            QStringLiteral("43 01 33 04 20 00 00"),
+            QStringLiteral("43 01 33 00 00 00 00"),
+        };
+        QCOMPARE(dtc::parse(legacy, 0x03), (QStringList{QStringLiteral("P0133"), QStringLiteral("P0420")}));
+        // Pending codes answer with 47, not 43.
+        QCOMPARE(dtc::parse({QStringLiteral("47 01 01 71")}, 0x07), QStringList{QStringLiteral("P0171")});
+        QCOMPARE(dtc::parse({QStringLiteral("47 01 01 71")}, 0x03), QStringList());
+        QCOMPARE(dtc::parse({QStringLiteral("NO DATA")}, 0x0A), QStringList());
+    }
+
+    void describesTroubleCodes()
+    {
+        QCOMPARE(dtc::describe(QStringLiteral("P0420")), QStringLiteral("Catalyst efficiency below threshold, bank 1"));
+        QCOMPARE(dtc::describe(QStringLiteral("P0304")), QStringLiteral("Cylinder 4 misfire detected"));
+        QCOMPARE(dtc::describe(QStringLiteral("P1234")), QStringLiteral("Manufacturer-specific code"));
+        QCOMPARE(dtc::describe(QStringLiteral("P0599")), QStringLiteral("Vehicle speed, idle control or auxiliary inputs"));
+    }
+
+    void readsAndClearsSimulatedCodes()
+    {
+        SimEcu ecu;
+        ask(ecu, QStringLiteral("ATE0"));
+        ask(ecu, QStringLiteral("ATS0"));
+        const auto status = elm::mode01Payload(ask(ecu, QStringLiteral("0101")), 0x01);
+        QVERIFY(status);
+        QCOMPARE(quint8(status->at(0)), quint8(0x82)); // light on, two codes
+        QCOMPARE(dtc::parse(ask(ecu, QStringLiteral("03")), 0x03),
+                 (QStringList{QStringLiteral("P0133"), QStringLiteral("P0420")}));
+        QCOMPARE(dtc::parse(ask(ecu, QStringLiteral("07")), 0x07), QStringList{QStringLiteral("P0171")});
+
+        QCOMPARE(ask(ecu, QStringLiteral("04")), QStringList{QStringLiteral("44")});
+        QCOMPARE(dtc::parse(ask(ecu, QStringLiteral("03")), 0x03), QStringList());
+        QCOMPARE(dtc::parse(ask(ecu, QStringLiteral("0A")), 0x0A), QStringList{QStringLiteral("P0420")});
+        QCOMPARE(quint8(elm::mode01Payload(ask(ecu, QStringLiteral("0101")), 0x01)->at(0)), quint8(0x00));
     }
 
     void simulatorEchoesUntilTurnedOff()

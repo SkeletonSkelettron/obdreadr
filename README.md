@@ -11,11 +11,29 @@ car through an ELM327 OBD-II adapter and draws it as scrolling charts.
 - **Bluetooth, BLE and Wi-Fi adapters.** Classic Bluetooth (SPP), Bluetooth
   Low Energy (finds the adapter's serial service by itself) and Wi-Fi
   (`192.168.0.10:35000` by default).
-- **Charts** of the last 30 seconds to 10 minutes, one card per sensor. Tap a
-  card to enlarge it; pick sensors in the ⋮ → Sensors panel.
+- **Four views**, each sensor in its own light color everywhere:
+  - **Charts**: one card per sensor with its current value and a chart of the
+    last 30 seconds to 10 minutes; tap a card to enlarge it.
+  - **Values**: the same sensors as a list of names and current values.
+  - **Overlay**: a few chosen sensors on one time axis. Each line has its own
+    scale; tap a sensor in the legend to show its scale on the chart.
+  - **Selected**: the chosen sensors' current values in large tiles.
+
+  Pick the charted sensors in ⋮ → Charted sensors and the compared ones in
+  ⋮ → Compared sensors.
+- **Fault codes** (⋮ → Fault codes): the check engine light, stored (mode 03),
+  pending (07) and permanent (0A) codes with short descriptions, and clearing
+  them (mode 04).
 - **Demo car**, a built-in simulated ELM327, for trying the app without a car.
 - Shows the VIN, the protocol and the battery voltage, and keeps a log of the
   conversation with the adapter (⋮ → Log).
+
+### Writing to the car
+
+Standard OBD-II gives an app one way to change the car: clearing the fault
+codes. Coding and adaptations (changing settings in the car's modules) use
+each maker's own diagnostic services, data identifiers and security access,
+so they are not part of this app.
 
 ## Install
 
@@ -72,13 +90,14 @@ your own, add the repository secrets `ANDROID_KEYSTORE_BASE64`,
 | --- | --- |
 | `src/obd/pids.*` | Table of mode 01 PIDs: names, units, ranges and formulas |
 | `src/obd/elmparser.*` | Parsing ELM327 answers: errors, supported-PID masks, VIN |
+| `src/obd/dtc.*` | Fault codes: parsing modes 03/07/0A and short descriptions |
 | `src/obd/simecu.*` | The simulated adapter and car used by the demo and the tests |
 | `src/transport/*` | Byte pipes to the adapter: Bluetooth, BLE, TCP, simulator |
 | `src/elm327.*` | Command queue: one command at a time, answer up to the `>` prompt |
 | `src/obdsession.*` | Connecting, initializing, discovering sensors, polling |
-| `src/linechart.*` | The chart, a `QQuickPaintedItem` |
+| `src/chartbase.*`, `src/linechart.*`, `src/overlaychart.*` | The charts, painted with `QQuickPaintedItem` |
 | `qml/` | The user interface (Qt Quick Controls, Material style) |
-| `tests/` | Unit tests of the parser, the PID formulas and the simulator |
+| `tests/` | Unit tests of the parser, the PID formulas, fault codes and the simulator |
 
 ## License
 

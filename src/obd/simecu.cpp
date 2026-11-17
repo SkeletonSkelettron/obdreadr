@@ -106,7 +106,7 @@ QString SimEcu::obdCommand(const QString &cmd, double t)
 {
     bool ok = false;
     cmd.toULongLong(&ok, 16);
-    if (!ok || cmd.size() < 4)
+    if (!ok || cmd.size() < 2 || cmd.size() % 2 != 0)
         return QStringLiteral("?");
 
     QString prefix;
@@ -116,6 +116,19 @@ QString SimEcu::obdCommand(const QString &cmd, double t)
     }
 
     const int mode = cmd.left(2).toInt(nullptr, 16);
+    switch (mode) {
+    case 0x03: return prefix + codesAnswer(0x03, m_stored);
+    case 0x07: return prefix + codesAnswer(0x07, m_pending);
+    case 0x0A: return prefix + codesAnswer(0x0A, m_permanent);
+    case 0x04:
+        // Permanent codes stay until the car itself sees the fault gone.
+        m_stored.clear();
+        m_pending.clear();
+        return prefix + hex(bytes({0x44}));
+    default: break;
+    }
+    if (cmd.size() < 4)
+        return prefix + QStringLiteral("NO DATA");
     const auto pid = quint8(cmd.mid(2, 2).toInt(nullptr, 16));
 
     if (mode == 0x01) {
@@ -142,23 +155,38 @@ QString SimEcu::obdCommand(const QString &cmd, double t)
         return prefix + hex(bytes({0x41, pid}) + *data);
     }
 
-    if (mode == 0x09 && pid == 0x02) {
-        // ISO-TP multi-frame answer, formatted the way an ELM327 prints it.
-        const QByteArray payload = bytes({0x49, 0x02, 0x01}) + vin().toLatin1();
-        QStringList lines;
-        lines << QStringLiteral("%1").arg(payload.size(), 3, 16, QLatin1Char('0')).toUpper();
-        int offset = 0;
-        for (int frame = 0; offset < payload.size(); ++frame) {
-            const int count = frame == 0 ? 6 : 7;
-            const QByteArray chunk = payload.mid(offset, count);
-            offset += count;
-            lines << QStringLiteral("%1:").arg(frame & 0xF, 0, 16).toUpper()
-                         + (m_spaces ? QStringLiteral(" ") : QString()) + hex(chunk);
-        }
-        return prefix + lines.join(QLatin1Char('\r'));
-    }
+    if (mode == 0x09 && pid == 0x02)
+        return prefix + canAnswer(bytes({0x49, 0x02, 0x01}) + vin().toLatin1());
 
     return prefix + QStringLiteral("NO DATA");
+}
+
+QString SimEcu::canAnswer(const QByteArray &payload) const
+{
+    if (payload.size() <= 7)
+        return hex(payload);
+    // ISO-TP multi-frame answer, formatted the way an ELM327 prints it.
+    QStringList lines;
+    lines << QStringLiteral("%1").arg(payload.size(), 3, 16, QLatin1Char('0')).toUpper();
+    int offset = 0;
+    for (int frame = 0; offset < payload.size(); ++frame) {
+        const int count = frame == 0 ? 6 : 7;
+        const QByteArray chunk = payload.mid(offset, count);
+        offset += count;
+        lines << QStringLiteral("%1:").arg(frame & 0xF, 0, 16).toUpper()
+                     + (m_spaces ? QStringLiteral(" ") : QString()) + hex(chunk);
+    }
+    return lines.join(QLatin1Char('\r'));
+}
+
+QString SimEcu::codesAnswer(quint8 service, const QList<quint16> &codes) const
+{
+    QByteArray payload = bytes({service + 0x40, int(codes.size())});
+    for (quint16 code : codes) {
+        payload += char(code >> 8);
+        payload += char(code & 0xFF);
+    }
+    return canAnswer(payload);
 }
 
 std::optional<QByteArray> SimEcu::pidData(quint8 pid, double t) const
@@ -171,7 +199,7 @@ std::optional<QByteArray> SimEcu::pidData(quint8 pid, double t) const
     const double maf = rpm * load / 4000.0;
 
     switch (pid) {
-    case 0x01: return bytes({0x00, 0x07, 0xE5, 0x00});
+    case 0x01: return bytes({(m_stored.isEmpty() ? 0 : 0x80) | int(m_stored.size()), 0x07, 0xE5, 0x00});
     case 0x03: return bytes({0x02, 0x00});
     case 0x04: return bytes({u8(load * 255 / 100)});
     case 0x05: return bytes({u8(coolant + 40)});

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(obdreadr VERSION 0.1.0 LANGUAGES CXX)
+project(obdreadr VERSION 0.2.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -22,6 +22,7 @@ qt_add_executable(obdreadr
     src/obd/pids.h src/obd/pids.cpp
     src/obd/elmparser.h src/obd/elmparser.cpp
     src/obd/simecu.h src/obd/simecu.cpp
+    src/obd/dtc.h src/obd/dtc.cpp
     src/transport/transport.h
     src/transport/tcptransport.h src/transport/tcptransport.cpp
     src/transport/simtransport.h src/transport/simtransport.cpp
@@ -29,7 +30,9 @@ qt_add_executable(obdreadr
     src/sensorseries.h src/sensorseries.cpp
     src/sensormodel.h src/sensormodel.cpp
     src/obdsession.h src/obdsession.cpp
+    src/chartbase.h src/chartbase.cpp
     src/linechart.h src/linechart.cpp
+    src/overlaychart.h src/overlaychart.cpp
 )
 
 qt_add_qml_module(obdreadr
@@ -40,6 +43,12 @@ qt_add_qml_module(obdreadr
         qml/ConnectPage.qml
         qml/DashboardPage.qml
         qml/SensorCard.qml
+        qml/ChartsView.qml
+        qml/ValuesView.qml
+        qml/OverlayView.qml
+        qml/BigValuesView.qml
+        qml/SensorPicker.qml
+        qml/CodesPage.qml
         qml/LogPage.qml
 )
 
@@ -83,7 +92,8 @@ if(NOT ANDROID)
             tests/tst_obd.cpp
             src/obd/pids.cpp
             src/obd/elmparser.cpp
-            src/obd/simecu.cpp)
+            src/obd/simecu.cpp
+            src/obd/dtc.cpp)
         target_include_directories(tst_obd PRIVATE src)
         target_link_libraries(tst_obd PRIVATE Qt6::Core Qt6::Test)
         add_test(NAME tst_obd COMMAND tst_obd)

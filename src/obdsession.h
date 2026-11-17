@@ -39,11 +39,19 @@ class ObdSession : public QObject
     Q_PROPERTY(QString vin READ vin NOTIFY infoChanged)
     Q_PROPERTY(QAbstractItemModel *sensors READ sensors CONSTANT)
     Q_PROPERTY(QAbstractItemModel *activeSensors READ activeSensors CONSTANT)
+    Q_PROPERTY(QAbstractItemModel *pinnedSensors READ pinnedSensors CONSTANT)
+    Q_PROPERTY(QList<QObject *> pinnedSeries READ pinnedSeries NOTIFY pinnedSeriesChanged)
     Q_PROPERTY(QAbstractItemModel *log READ log CONSTANT)
     Q_PROPERTY(int sensorCount READ sensorCount NOTIFY sensorCountChanged)
     Q_PROPERTY(double sampleRate READ sampleRate NOTIFY sampleRateChanged)
     Q_PROPERTY(bool paused READ paused WRITE setPaused NOTIFY pausedChanged)
     Q_PROPERTY(int windowSeconds READ windowSeconds WRITE setWindowSeconds NOTIFY windowSecondsChanged)
+    Q_PROPERTY(int viewTab READ viewTab WRITE setViewTab NOTIFY viewTabChanged)
+    Q_PROPERTY(bool dtcBusy READ dtcBusy NOTIFY dtcChanged)
+    Q_PROPERTY(bool dtcRead READ dtcRead NOTIFY dtcChanged)
+    Q_PROPERTY(bool milOn READ milOn NOTIFY dtcChanged)
+    Q_PROPERTY(QString dtcStatus READ dtcStatus NOTIFY dtcChanged)
+    Q_PROPERTY(QVariantList dtcCodes READ dtcCodes NOTIFY dtcChanged)
     Q_PROPERTY(bool bluetoothAvailable READ bluetoothAvailable CONSTANT)
     Q_PROPERTY(bool scanning READ scanning NOTIFY scanningChanged)
     Q_PROPERTY(QVariantList devices READ devices NOTIFY devicesChanged)
@@ -69,6 +77,8 @@ public:
     QString vin() const { return m_vin; }
     QAbstractItemModel *sensors() const { return m_sensors; }
     QAbstractItemModel *activeSensors() const { return m_activeSensors; }
+    QAbstractItemModel *pinnedSensors() const { return m_pinnedSensors; }
+    QList<QObject *> pinnedSeries() const;
     QAbstractItemModel *log() const { return m_log; }
     int sensorCount() const { return m_sensors->size(); }
     double sampleRate() const { return m_sampleRate; }
@@ -76,6 +86,13 @@ public:
     void setPaused(bool paused);
     int windowSeconds() const { return m_windowSeconds; }
     void setWindowSeconds(int seconds);
+    int viewTab() const { return m_viewTab; }
+    void setViewTab(int tab);
+    bool dtcBusy() const { return m_dtcBusy; }
+    bool dtcRead() const { return m_dtcRead; }
+    bool milOn() const { return m_milOn; }
+    QString dtcStatus() const { return m_dtcStatus; }
+    QVariantList dtcCodes() const { return m_dtcCodes; }
     bool bluetoothAvailable() const;
     bool scanning() const;
     QVariantList devices() const { return m_devices; }
@@ -93,6 +110,12 @@ public:
     Q_INVOKABLE void reconnect();
     Q_INVOKABLE void disconnectAdapter();
     Q_INVOKABLE void setAllSensorsActive(bool active);
+    Q_INVOKABLE void setAllSensorsPinned(bool pinned);
+
+    // Fault codes: reads stored (03), pending (07) and permanent (0A) codes
+    // and the check engine light; clearing (04) is the one standard write.
+    Q_INVOKABLE void readCodes();
+    Q_INVOKABLE void clearCodes();
 
 signals:
     void stateChanged();
@@ -102,6 +125,9 @@ signals:
     void sampleRateChanged();
     void pausedChanged();
     void windowSecondsChanged();
+    void viewTabChanged();
+    void pinnedSeriesChanged();
+    void dtcChanged();
     void scanningChanged();
     void devicesChanged();
     void settingsChanged();
@@ -140,7 +166,8 @@ private:
     QString m_protocol;
     QString m_vin;
     SensorModel *m_sensors;
-    ActiveSensorModel *m_activeSensors;
+    SensorFilterModel *m_activeSensors;
+    SensorFilterModel *m_pinnedSensors;
     QStringListModel *m_log;
     QVariantList m_devices;
 
@@ -162,4 +189,15 @@ private:
     int m_samples = 0;
     double m_sampleRate = 0;
     int m_windowSeconds = 60;
+    int m_viewTab = 0;
+
+    void resetCodes();
+    void finishCodes(const QString &status);
+    bool m_dtcBusy = false;
+    bool m_dtcRead = false;
+    bool m_milOn = false;
+    int m_milCount = 0;
+    QString m_dtcStatus;
+    QString m_dtcNote; // shown with the next read, e.g. after clearing
+    QVariantList m_dtcCodes;
 };

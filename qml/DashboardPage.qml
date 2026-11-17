@@ -11,6 +11,7 @@ Page {
 
     signal backRequested()
     signal logRequested()
+    signal codesRequested()
 
     readonly property bool running: ObdSession.state === ObdSession.Running
     readonly property bool failed: ObdSession.state === ObdSession.Failed
@@ -18,75 +19,109 @@ Page {
                                  || ObdSession.state === ObdSession.Initializing
                                  || ObdSession.state === ObdSession.Discovering
     readonly property var windows: [30, 60, 120, 300, 600]
+    // The Charts and Overlay tabs show time, so they get the window selector.
+    readonly property bool showsTime: viewTabs.currentIndex === 0 || viewTabs.currentIndex === 2
 
-    header: ToolBar {
-        RowLayout {
-            anchors.fill: parent
-            spacing: 0
+    header: ColumnLayout {
+        spacing: 0
 
-            ToolButton {
-                text: "‹"
-                font.pixelSize: 30
-                onClicked: page.backRequested()
-            }
+        ToolBar {
+            Layout.fillWidth: true
 
-            ColumnLayout {
-                Layout.fillWidth: true
+            RowLayout {
+                anchors.fill: parent
                 spacing: 0
-                Label {
-                    Layout.fillWidth: true
-                    elide: Text.ElideRight
-                    font.bold: true
-                    text: ObdSession.connectionName
+
+                ToolButton {
+                    text: "‹"
+                    font.pixelSize: 30
+                    onClicked: page.backRequested()
                 }
-                Label {
+
+                ColumnLayout {
                     Layout.fillWidth: true
-                    elide: Text.ElideRight
-                    font.pixelSize: 12
-                    opacity: 0.75
-                    text: {
-                        let parts = [ObdSession.stateText]
-                        if (page.running)
-                            parts.push(qsTr("%1/s").arg(ObdSession.sampleRate.toFixed(0)))
-                        if (ObdSession.protocol !== "")
-                            parts.push(ObdSession.protocol)
-                        return parts.join("  ·  ")
+                    spacing: 0
+                    Label {
+                        Layout.fillWidth: true
+                        elide: Text.ElideRight
+                        font.bold: true
+                        text: ObdSession.connectionName
+                    }
+                    Label {
+                        Layout.fillWidth: true
+                        elide: Text.ElideRight
+                        font.pixelSize: 12
+                        opacity: 0.75
+                        text: {
+                            let parts = [ObdSession.stateText]
+                            if (page.running)
+                                parts.push(qsTr("%1/s").arg(ObdSession.sampleRate.toFixed(0)))
+                            if (ObdSession.protocol !== "")
+                                parts.push(ObdSession.protocol)
+                            return parts.join("  ·  ")
+                        }
+                    }
+                }
+
+                ToolButton {
+                    visible: page.running
+                    text: ObdSession.paused ? qsTr("Resume") : qsTr("Pause")
+                    onClicked: ObdSession.paused = !ObdSession.paused
+                }
+                ToolButton {
+                    text: "⋮"
+                    font.pixelSize: 22
+                    onClicked: menu.open()
+
+                    Menu {
+                        id: menu
+                        y: parent.height
+                        MenuItem {
+                            text: qsTr("Charted sensors…")
+                            enabled: ObdSession.sensorCount > 0
+                            onTriggered: sensorPicker.open()
+                        }
+                        MenuItem {
+                            text: qsTr("Compared sensors…")
+                            enabled: ObdSession.sensorCount > 0
+                            onTriggered: pinPicker.open()
+                        }
+                        MenuItem {
+                            text: qsTr("Fault codes…")
+                            onTriggered: page.codesRequested()
+                        }
+                        MenuItem {
+                            text: qsTr("Log")
+                            onTriggered: page.logRequested()
+                        }
+                        MenuItem {
+                            text: qsTr("Reconnect")
+                            onTriggered: ObdSession.reconnect()
+                        }
                     }
                 }
             }
+        }
 
-            ToolButton {
-                visible: page.running
-                text: ObdSession.paused ? qsTr("Resume") : qsTr("Pause")
-                onClicked: ObdSession.paused = !ObdSession.paused
-            }
-            ToolButton {
-                text: "⋮"
-                font.pixelSize: 22
-                onClicked: menu.open()
+        TabBar {
+            id: viewTabs
+            Layout.fillWidth: true
+            currentIndex: ObdSession.viewTab
 
-                Menu {
-                    id: menu
-                    y: parent.height
-                    MenuItem {
-                        text: qsTr("Sensors…")
-                        enabled: ObdSession.sensorCount > 0
-                        onTriggered: sensorDrawer.open()
-                    }
-                    MenuItem {
-                        text: qsTr("Log")
-                        onTriggered: page.logRequested()
-                    }
-                    MenuItem {
-                        text: qsTr("Reconnect")
-                        onTriggered: ObdSession.reconnect()
-                    }
+            Repeater {
+                model: [qsTr("Charts"), qsTr("Values"), qsTr("Overlay"), qsTr("Selected")]
+                TabButton {
+                    required property string modelData
+                    required property int index
+                    text: modelData
+                    onClicked: ObdSession.viewTab = index
                 }
             }
         }
     }
 
     footer: TabBar {
+        visible: page.showsTime
         currentIndex: Math.max(0, page.windows.indexOf(ObdSession.windowSeconds))
         Repeater {
             model: [qsTr("30 s"), qsTr("1 min"), qsTr("2 min"), qsTr("5 min"), qsTr("10 min")]
@@ -99,23 +134,13 @@ Page {
         }
     }
 
-    ListView {
-        id: list
+    ColumnLayout {
         anchors.fill: parent
-        topMargin: 12
-        bottomMargin: 12
-        leftMargin: 12
-        rightMargin: 12
-        spacing: 12
-        clip: true
-        model: ObdSession.activeSensors
-        cacheBuffer: 600
-        ScrollIndicator.vertical: ScrollIndicator {}
+        spacing: 0
 
-        header: Pane {
-            width: list.width - 24
+        Pane {
+            Layout.fillWidth: true
             visible: page.failed
-            height: visible ? implicitHeight : 0
             Material.background: "#5c2b29"
 
             ColumnLayout {
@@ -123,6 +148,7 @@ Page {
                 Label {
                     Layout.fillWidth: true
                     wrapMode: Text.Wrap
+                    color: "#FFCDD2"
                     text: ObdSession.statusText
                 }
                 RowLayout {
@@ -140,111 +166,58 @@ Page {
             }
         }
 
-        delegate: SensorCard {
-            width: ListView.view.width - 24
+        StackLayout {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            currentIndex: viewTabs.currentIndex
+
+            ChartsView {
+                onChooseRequested: sensorPicker.open()
+            }
+            ValuesView {
+                onChooseRequested: sensorPicker.open()
+            }
+            OverlayView {
+                onChooseRequested: pinPicker.open()
+            }
+            BigValuesView {
+                onChooseRequested: pinPicker.open()
+            }
         }
     }
 
-    // Progress while connecting, and hints when there is nothing to chart.
+    // Progress while connecting.
     ColumnLayout {
         anchors.centerIn: parent
         width: parent.width - 48
         spacing: 16
-        visible: page.busy || (page.running && list.count === 0)
+        visible: page.busy
 
         BusyIndicator {
             Layout.alignment: Qt.AlignHCenter
             running: page.busy
-            visible: running
         }
         Label {
             Layout.fillWidth: true
             horizontalAlignment: Text.AlignHCenter
             wrapMode: Text.Wrap
-            text: page.busy ? ObdSession.statusText : qsTr("No sensors selected.")
-        }
-        Button {
-            Layout.alignment: Qt.AlignHCenter
-            visible: page.running
-            text: qsTr("Choose sensors")
-            onClicked: sensorDrawer.open()
+            text: ObdSession.statusText
         }
     }
 
-    Drawer {
-        id: sensorDrawer
-        edge: Qt.RightEdge
+    SensorPicker {
+        id: sensorPicker
         width: Math.min(page.width * 0.88, 400)
+        role: "active"
+        title: qsTr("Charted sensors (%1)").arg(ObdSession.sensorCount)
+        hint: qsTr("Shown on the Charts and Values tabs. Each extra sensor slows down the updates of the others.")
+    }
 
-        ColumnLayout {
-            anchors.fill: parent
-            spacing: 0
-
-            Label {
-                Layout.fillWidth: true
-                padding: 16
-                font.pixelSize: 18
-                font.bold: true
-                text: qsTr("Sensors (%1)").arg(ObdSession.sensorCount)
-            }
-            Label {
-                Layout.fillWidth: true
-                leftPadding: 16
-                rightPadding: 16
-                visible: ObdSession.vin !== ""
-                opacity: 0.7
-                font.pixelSize: 12
-                text: qsTr("VIN %1").arg(ObdSession.vin)
-            }
-            Label {
-                Layout.fillWidth: true
-                leftPadding: 16
-                rightPadding: 16
-                topPadding: 4
-                wrapMode: Text.Wrap
-                opacity: 0.7
-                font.pixelSize: 12
-                text: qsTr("Each extra sensor slows down the updates of the others.")
-            }
-            RowLayout {
-                Layout.leftMargin: 8
-                Button {
-                    flat: true
-                    text: qsTr("All")
-                    onClicked: ObdSession.setAllSensorsActive(true)
-                }
-                Button {
-                    flat: true
-                    text: qsTr("None")
-                    onClicked: ObdSession.setAllSensorsActive(false)
-                }
-            }
-
-            ListView {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                clip: true
-                model: ObdSession.sensors
-                ScrollIndicator.vertical: ScrollIndicator {}
-
-                delegate: CheckDelegate {
-                    id: check
-                    required property var model
-                    required property string name
-                    required property string pidText
-                    required property bool active
-                    required property bool available
-
-                    width: ListView.view.width
-                    enabled: available
-                    checked: active
-                    text: available ? name : qsTr("%1 (no data)").arg(name)
-                    onToggled: {
-                        model.active = checked
-                        checked = Qt.binding(() => check.active)
-                    }
-                }
-            }
-        }
+    SensorPicker {
+        id: pinPicker
+        width: Math.min(page.width * 0.88, 400)
+        role: "pinned"
+        title: qsTr("Compared sensors")
+        hint: qsTr("Shown together on the Overlay tab and large on the Selected tab. A few sensors update fastest.")
     }
 }

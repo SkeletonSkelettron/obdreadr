@@ -1,6 +1,7 @@
 #include "obdsession.h"
 
 #include "obd/elmparser.h"
+#include "obd/dtc.h"
 #include "obd/pids.h"
 #include "sensorseries.h"
 #include "transport/simtransport.h"
@@ -10,6 +11,8 @@
 #include <QSettings>
 
 #include <algorithm>
+#include <iterator>
+#include <utility>
 
 #ifdef OBD_HAVE_BLUETOOTH
 #include "transport/bletransport.h"
@@ -54,18 +57,25 @@ bool looksLikeObd(const QString &name)
 ObdSession::ObdSession(QObject *parent)
     : QObject(parent)
     , m_sensors(new SensorModel(this))
-    , m_activeSensors(new ActiveSensorModel(this))
+    , m_activeSensors(new SensorFilterModel(SensorModel::ActiveRole, this))
+    , m_pinnedSensors(new SensorFilterModel(SensorModel::PinnedRole, this))
     , m_log(new QStringListModel(this))
 {
     m_activeSensors->setSourceModel(m_sensors);
+    m_pinnedSensors->setSourceModel(m_sensors);
 
     QSettings settings;
     m_windowSeconds = settings.value(QStringLiteral("view/window"), 60).toInt();
+    m_viewTab = settings.value(QStringLiteral("view/tab"), 0).toInt();
 
     connect(&m_elm, &Elm327::logLine, this, &ObdSession::appendLog);
-    connect(m_sensors, &SensorModel::activeChanged, this, [this] {
-        if (m_sensors->size() > 0)
-            QSettings().setValue(QStringLiteral("sensors/active"), m_sensors->activeKeys());
+    connect(m_sensors, &SensorModel::selectionChanged, this, [this] {
+        if (m_sensors->size() > 0) {
+            QSettings s;
+            s.setValue(QStringLiteral("sensors/active"), m_sensors->keys(SensorModel::ActiveRole));
+            s.setValue(QStringLiteral("sensors/pinned"), m_sensors->keys(SensorModel::PinnedRole));
+        }
+        emit pinnedSeriesChanged();
         if (m_state == Running)
             pollNext();
     });
@@ -121,7 +131,29 @@ void ObdSession::setWindowSeconds(int seconds)
         return;
     m_windowSeconds = seconds;
     QSettings().setValue(QStringLiteral("view/window"), seconds);
+    for (int row = 0; row < m_sensors->size(); ++row)
+        m_sensors->entry(row).series->setRangeWindow(seconds);
     emit windowSecondsChanged();
+}
+
+void ObdSession::setViewTab(int tab)
+{
+    if (m_viewTab == tab)
+        return;
+    m_viewTab = tab;
+    QSettings().setValue(QStringLiteral("view/tab"), tab);
+    emit viewTabChanged();
+}
+
+QList<QObject *> ObdSession::pinnedSeries() const
+{
+    QList<QObject *> series;
+    for (int row = 0; row < m_sensors->size(); ++row) {
+        const SensorModel::Entry &e = m_sensors->entry(row);
+        if (e.pinned && e.available)
+            series << e.series;
+    }
+    return series;
 }
 
 QString ObdSession::lastHost() const
@@ -151,7 +183,12 @@ bool ObdSession::lastBtBle() const
 
 void ObdSession::setAllSensorsActive(bool active)
 {
-    m_sensors->setAllActive(active);
+    m_sensors->setAll(SensorModel::ActiveRole, active);
+}
+
+void ObdSession::setAllSensorsPinned(bool pinned)
+{
+    m_sensors->setAll(SensorModel::PinnedRole, pinned);
 }
 
 // --- Connecting -------------------------------------------------------------
@@ -243,6 +280,7 @@ void ObdSession::startTransport(const QString &name, TransportFactory factory)
     m_sensors->clear();
     emit sensorCountChanged();
     m_log->setStringList({});
+    resetCodes();
     m_clock.start();
 
     m_transport = factory();
@@ -280,6 +318,10 @@ void ObdSession::teardown()
         m_transport->close();
         m_transport->deleteLater();
         m_transport = nullptr;
+    }
+    if (m_dtcBusy) {
+        m_dtcBusy = false;
+        emit dtcChanged();
     }
     if (m_sampleRate != 0) {
         m_sampleRate = 0;
@@ -414,10 +456,14 @@ void ObdSession::finishDiscovery()
     QStringList charted;
     QStringList other;
 
+    // Each sensor keeps one color in every tab.
+    const auto nextColor = [&entries] { return SensorSeries::paletteColor(int(entries.size())); };
+
     SensorModel::Entry voltage;
     voltage.key = QString::fromLatin1(kVoltageKey);
     voltage.favorite = true;
-    voltage.series = new SensorSeries(tr("Battery voltage (adapter)"), QStringLiteral("V"), 1, 0, 16, &m_clock, this);
+    voltage.series = new SensorSeries(tr("Battery voltage (adapter)"), QStringLiteral("V"), 1, 0, 16,
+                                      nextColor(), &m_clock, this);
     entries.push_back(voltage);
 
     for (quint8 pid : std::as_const(pids)) {
@@ -433,18 +479,32 @@ void ObdSession::finishDiscovery()
         e.pid = pid;
         e.favorite = info->favorite;
         e.series = new SensorSeries(QString::fromUtf8(info->name), QString::fromUtf8(info->unit), info->decimals,
-                                    info->min, info->max, &m_clock, this);
+                                    info->min, info->max, nextColor(), &m_clock, this);
         entries.push_back(e);
         charted << obd::hex2(pid);
     }
 
-    // Keep the user's previous choice if it fits this car, else the favorites.
-    const QStringList saved = QSettings().value(QStringLiteral("sensors/active")).toStringList();
-    const bool useSaved = std::any_of(entries.begin(), entries.end(), [&](const SensorModel::Entry &e) {
-        return e.pid >= 0 && saved.contains(e.key);
+    // Keep the user's previous choices if they fit this car, else the defaults.
+    const auto restore = [&entries](const QString &settingsKey, const auto &byDefault) {
+        const QStringList saved = QSettings().value(settingsKey).toStringList();
+        const bool useSaved = std::any_of(entries.begin(), entries.end(), [&](const SensorModel::Entry &e) {
+            return e.pid >= 0 && saved.contains(e.key);
+        });
+        QList<bool> flags;
+        for (const SensorModel::Entry &e : entries)
+            flags << (useSaved ? saved.contains(e.key) : byDefault(e));
+        return flags;
+    };
+    const QList<bool> active = restore(QStringLiteral("sensors/active"),
+                                       [](const SensorModel::Entry &e) { return e.favorite; });
+    const QList<bool> pinned = restore(QStringLiteral("sensors/pinned"), [](const SensorModel::Entry &e) {
+        return e.pid == 0x0C || e.pid == 0x0D || e.pid == 0x11 || e.pid == 0x04;
     });
-    for (SensorModel::Entry &e : entries)
-        e.active = useSaved ? saved.contains(e.key) : e.favorite;
+    for (size_t i = 0; i < entries.size(); ++i) {
+        entries[i].active = active[qsizetype(i)];
+        entries[i].pinned = pinned[qsizetype(i)];
+        entries[i].series->setRangeWindow(m_windowSeconds);
+    }
 
     m_sensors->setEntries(std::move(entries));
     emit sensorCountChanged();
@@ -489,7 +549,7 @@ void ObdSession::pollNext()
     for (int step = 0; step < count; ++step) {
         m_pollIndex = (m_pollIndex + 1) % count;
         const SensorModel::Entry &e = m_sensors->entry(m_pollIndex);
-        if (!e.active || !e.available)
+        if (!e.polled())
             continue;
         if (e.pid < 0 && nowMs - e.lastPollMs < kVoltageIntervalMs)
             continue;
@@ -547,6 +607,126 @@ void ObdSession::handlePollReply(int row, const Elm327::Reply &reply)
         const QString why = reply.error.isEmpty() ? tr("no valid data") : reply.error;
         fail(tr("Lost contact with the car (%1)").arg(why));
     }
+}
+
+// --- Fault codes ---------------------------------------------------------------
+
+void ObdSession::resetCodes()
+{
+    m_dtcBusy = false;
+    m_dtcRead = false;
+    m_milOn = false;
+    m_milCount = -1;
+    m_dtcStatus.clear();
+    m_dtcCodes.clear();
+    emit dtcChanged();
+}
+
+void ObdSession::readCodes()
+{
+    if (m_state != Running || m_dtcBusy)
+        return;
+    m_dtcBusy = true;
+    m_dtcCodes.clear();
+    m_milOn = false;
+    m_milCount = -1;
+    m_dtcStatus = tr("Reading fault codes…");
+    emit dtcChanged();
+
+    // The requests queue up between the sensor polls.
+    const quint64 generation = m_generation;
+    m_elm.send(QStringLiteral("0101"), [this, generation](const Elm327::Reply &reply) {
+        if (!isCurrent(generation))
+            return;
+        const auto payload = elm::mode01Payload(reply.lines, 0x01);
+        if (payload && !payload->isEmpty()) {
+            const auto a = quint8(payload->at(0));
+            m_milOn = a & 0x80;
+            m_milCount = a & 0x7F;
+        }
+    }, 3000);
+
+    struct Kind {
+        const char *command;
+        quint8 service;
+        const char *name;
+    };
+    static const Kind kKinds[] = {
+        {"03", 0x03, "stored"},
+        {"07", 0x07, "pending"},
+        {"0A", 0x0A, "permanent"},
+    };
+    for (const Kind &kind : kKinds) {
+        const bool last = &kind == &kKinds[std::size(kKinds) - 1];
+        m_elm.send(QString::fromLatin1(kind.command), [this, generation, kind, last](const Elm327::Reply &reply) {
+            if (!isCurrent(generation))
+                return;
+            const QStringList codes = dtc::parse(reply.lines, kind.service);
+            for (const QString &code : codes) {
+                m_dtcCodes << QVariantMap{
+                    {QStringLiteral("code"), code},
+                    {QStringLiteral("description"), dtc::describe(code)},
+                    {QStringLiteral("kind"), QString::fromLatin1(kind.name)},
+                };
+            }
+            appendLog(QStringLiteral("%1 (%2): %3")
+                          .arg(QString::fromLatin1(kind.name), QString::fromLatin1(kind.command),
+                               codes.isEmpty() ? (reply.error.isEmpty() ? tr("none") : reply.error)
+                                               : codes.join(QStringLiteral(", "))));
+            if (last)
+                finishCodes(std::exchange(m_dtcNote, QString()));
+        }, 5000);
+    }
+}
+
+void ObdSession::finishCodes(const QString &prefix)
+{
+    m_dtcBusy = false;
+    m_dtcRead = true;
+    QStringList parts;
+    if (!prefix.isEmpty())
+        parts << prefix;
+    if (m_milCount >= 0)
+        parts << (m_milOn ? tr("Check engine light ON") : tr("Check engine light off"));
+    parts << (m_dtcCodes.isEmpty() ? tr("No fault codes") : tr("%n fault code(s)", nullptr, int(m_dtcCodes.size())));
+    m_dtcStatus = parts.join(QStringLiteral(" · "));
+    emit dtcChanged();
+}
+
+void ObdSession::clearCodes()
+{
+    if (m_state != Running || m_dtcBusy)
+        return;
+    m_dtcBusy = true;
+    m_dtcStatus = tr("Clearing fault codes…");
+    emit dtcChanged();
+    appendLog(tr("Clearing fault codes (mode 04)"));
+
+    const quint64 generation = m_generation;
+    m_elm.send(QStringLiteral("04"), [this, generation](const Elm327::Reply &reply) {
+        if (!isCurrent(generation))
+            return;
+        bool cleared = false;
+        bool refused = false;
+        for (const QString &line : reply.lines) {
+            const QString c = elm::compact(line);
+            cleared = cleared || c.startsWith(QLatin1String("44"));
+            refused = refused || c.startsWith(QLatin1String("7F04"));
+        }
+        m_dtcBusy = false;
+        if (cleared) {
+            appendLog(tr("Fault codes cleared"));
+            m_dtcNote = tr("Codes cleared");
+            readCodes();
+            return;
+        }
+        m_dtcStatus = refused
+                          ? tr("The car refused to clear the codes. Switch the engine off, leave the ignition on and try again.")
+                          : tr("Clearing failed: %1")
+                                .arg(reply.error.isEmpty() ? reply.lines.join(QLatin1Char(' ')) : reply.error);
+        appendLog(QStringLiteral("! ") + m_dtcStatus);
+        emit dtcChanged();
+    }, 10000);
 }
 
 // --- Bluetooth -----------------------------------------------------------------

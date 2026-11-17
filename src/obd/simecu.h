@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QByteArray>
+#include <QList>
 #include <QSet>
 #include <QString>
 
@@ -25,8 +26,14 @@ private:
     QString obdCommand(const QString &cmd, double t);
     std::optional<QByteArray> pidData(quint8 pid, double t) const;
     QString hex(const QByteArray &bytes) const;
+    // One line, or ISO-TP frames when the answer does not fit in one.
+    QString canAnswer(const QByteArray &payload) const;
+    QString codesAnswer(quint8 service, const QList<quint16> &codes) const;
 
     QSet<quint8> m_supported;
+    QList<quint16> m_stored = {0x0133, 0x0420};
+    QList<quint16> m_pending = {0x0171};
+    QList<quint16> m_permanent = {0x0420};
     bool m_echo = true;
     bool m_spaces = true;
     bool m_headers = false;

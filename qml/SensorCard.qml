@@ -13,6 +13,7 @@ Pane {
     required property var series
 
     property bool expanded: false
+    readonly property color sensorColor: series ? series.color : Material.accent
 
     implicitHeight: expanded ? 340 : 180
     padding: 12
@@ -37,6 +38,7 @@ Pane {
                     Layout.fillWidth: true
                     elide: Text.ElideRight
                     font.pixelSize: 14
+                    color: Qt.tint(card.sensorColor, "#99ffffff")
                     text: card.name
                 }
                 Label {
@@ -48,14 +50,15 @@ Pane {
             Label {
                 font.pixelSize: 28
                 font.bold: true
-                color: Material.accent
+                color: card.sensorColor
                 text: card.series ? card.series.valueText : "–"
             }
             Label {
                 Layout.alignment: Qt.AlignBottom
                 bottomPadding: 5
                 font.pixelSize: 14
-                opacity: 0.7
+                color: card.sensorColor
+                opacity: 0.75
                 text: card.unit
             }
         }
@@ -66,7 +69,7 @@ Pane {
             series: card.series
             timeSpan: ObdSession.windowSeconds
             live: ObdSession.state === ObdSession.Running && !ObdSession.paused
-            lineColor: Material.accent
+            lineColor: card.sensorColor
             textColor: Material.hintTextColor
             gridColor: Material.dividerColor
         }

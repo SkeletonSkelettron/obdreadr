@@ -33,12 +33,20 @@ ApplicationWindow {
         DashboardPage {
             onBackRequested: window.leaveDashboard()
             onLogRequested: stack.push(logPage)
+            onCodesRequested: stack.push(codesPage)
         }
     }
 
     Component {
         id: logPage
         LogPage {
+            onBackRequested: stack.pop()
+        }
+    }
+
+    Component {
+        id: codesPage
+        CodesPage {
             onBackRequested: stack.pop()
         }
     }
