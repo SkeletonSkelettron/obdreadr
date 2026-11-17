@@ -25,7 +25,9 @@ ApplicationWindow {
     StackView {
         id: stack
         anchors.fill: parent
-        initialItem: ConnectPage {}
+        initialItem: ConnectPage {
+            onRecordingsRequested: stack.push(recordingsPage)
+        }
     }
 
     Component {
@@ -34,6 +36,7 @@ ApplicationWindow {
             onBackRequested: window.leaveDashboard()
             onLogRequested: stack.push(logPage)
             onCodesRequested: stack.push(codesPage)
+            onRecordingsRequested: stack.push(recordingsPage)
         }
     }
 
@@ -47,6 +50,13 @@ ApplicationWindow {
     Component {
         id: codesPage
         CodesPage {
+            onBackRequested: stack.pop()
+        }
+    }
+
+    Component {
+        id: recordingsPage
+        RecordingsPage {
             onBackRequested: stack.pop()
         }
     }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "elm327.h"
+#include "recorder.h"
 #include "sensormodel.h"
 
 #include <QAbstractItemModel>
@@ -10,6 +11,7 @@
 #include <QSet>
 #include <QStringListModel>
 #include <QTimer>
+#include <QUrl>
 #include <QVariantList>
 #include <QtQml/qqmlregistration.h>
 
@@ -47,6 +49,9 @@ class ObdSession : public QObject
     Q_PROPERTY(bool paused READ paused WRITE setPaused NOTIFY pausedChanged)
     Q_PROPERTY(int windowSeconds READ windowSeconds WRITE setWindowSeconds NOTIFY windowSecondsChanged)
     Q_PROPERTY(int viewTab READ viewTab WRITE setViewTab NOTIFY viewTabChanged)
+    Q_PROPERTY(bool recordAll READ recordAll WRITE setRecordAll NOTIFY recordAllChanged)
+    Q_PROPERTY(bool recording READ recording NOTIFY recordingChanged)
+    Q_PROPERTY(QVariantList recordings READ recordings NOTIFY recordingsChanged)
     Q_PROPERTY(bool dtcBusy READ dtcBusy NOTIFY dtcChanged)
     Q_PROPERTY(bool dtcRead READ dtcRead NOTIFY dtcChanged)
     Q_PROPERTY(bool milOn READ milOn NOTIFY dtcChanged)
@@ -88,6 +93,10 @@ public:
     void setWindowSeconds(int seconds);
     int viewTab() const { return m_viewTab; }
     void setViewTab(int tab);
+    bool recordAll() const { return m_recordAll; }
+    void setRecordAll(bool on);
+    bool recording() const { return m_recorder.isRecording(); }
+    QVariantList recordings() const { return m_recordings; }
     bool dtcBusy() const { return m_dtcBusy; }
     bool dtcRead() const { return m_dtcRead; }
     bool milOn() const { return m_milOn; }
@@ -117,6 +126,13 @@ public:
     Q_INVOKABLE void readCodes();
     Q_INVOKABLE void clearCodes();
 
+    // Recordings: one CSV file per connection, kept in the app's storage.
+    Q_INVOKABLE void refreshRecordings();
+    // Copies a recording to `target` (a file or, on Android, a content:// URL
+    // from the system save dialog); returns a message for the user.
+    Q_INVOKABLE QString exportRecording(const QString &path, const QUrl &target);
+    Q_INVOKABLE void deleteRecording(const QString &path);
+
 signals:
     void stateChanged();
     void statusTextChanged();
@@ -128,6 +144,9 @@ signals:
     void viewTabChanged();
     void pinnedSeriesChanged();
     void dtcChanged();
+    void recordAllChanged();
+    void recordingChanged();
+    void recordingsChanged();
     void scanningChanged();
     void devicesChanged();
     void settingsChanged();
@@ -150,6 +169,9 @@ private:
     void pollNext();
     void pollEntry(int row);
     void handlePollReply(int row, const Elm327::Reply &reply);
+    int pollIntervalMs(const SensorModel::Entry &e) const;
+    void startRecording();
+    void stopRecording();
     bool isCurrent(quint64 generation) const { return generation == m_generation; }
 
     void withBluetoothPermission(std::function<void()> action);
@@ -177,6 +199,10 @@ private:
     TransportFactory m_lastFactory;
     quint64 m_generation = 0;
     QElapsedTimer m_clock;
+    QDateTime m_clockStart; // wall time when m_clock started
+    Recorder m_recorder;
+    bool m_recordAll = true;
+    QVariantList m_recordings;
     QTimer m_connectTimeout;
     QTimer m_idleTimer;
     QTimer m_rateTimer;
@@ -184,7 +210,6 @@ private:
 
     bool m_paused = false;
     bool m_polling = false;
-    int m_pollIndex = -1;
     int m_failStreak = 0;
     int m_samples = 0;
     double m_sampleRate = 0;

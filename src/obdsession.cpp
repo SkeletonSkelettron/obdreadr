@@ -8,6 +8,9 @@
 #include "transport/tcptransport.h"
 
 #include <QCoreApplication>
+#include <QDir>
+#include <QFileInfo>
+#include <QLocale>
 #include <QSettings>
 
 #include <algorithm>
@@ -30,7 +33,6 @@
 namespace {
 
 constexpr int kConnectTimeoutMs = 20000;
-constexpr int kVoltageIntervalMs = 2000;
 constexpr int kMissesBeforeUnavailable = 6;  // NO DATA answers in a row for one sensor
 constexpr int kFailuresBeforeLost = 12;      // failed answers in a row for all sensors
 constexpr int kMaxLogLines = 500;
@@ -67,6 +69,8 @@ ObdSession::ObdSession(QObject *parent)
     QSettings settings;
     m_windowSeconds = settings.value(QStringLiteral("view/window"), 60).toInt();
     m_viewTab = settings.value(QStringLiteral("view/tab"), 0).toInt();
+    m_recordAll = settings.value(QStringLiteral("record/all"), true).toBool();
+    refreshRecordings();
 
     connect(&m_elm, &Elm327::logLine, this, &ObdSession::appendLog);
     connect(m_sensors, &SensorModel::selectionChanged, this, [this] {
@@ -282,6 +286,7 @@ void ObdSession::startTransport(const QString &name, TransportFactory factory)
     m_log->setStringList({});
     resetCodes();
     m_clock.start();
+    m_clockStart = QDateTime::currentDateTime();
 
     m_transport = factory();
     connect(m_transport, &Transport::opened, this, [this, generation] {
@@ -313,6 +318,7 @@ void ObdSession::teardown()
     m_rateTimer.stop();
     m_polling = false;
     m_elm.setTransport(nullptr);
+    stopRecording();
     if (m_transport) {
         m_transport->disconnect(this);
         m_transport->close();
@@ -532,32 +538,55 @@ void ObdSession::startPolling()
     m_elm.setVerbose(false);
     m_failStreak = 0;
     m_samples = 0;
-    m_pollIndex = -1;
     m_rateTimer.start();
+    startRecording();
     setState(Running);
     setStatus(tr("%n sensor(s) found", nullptr, m_sensors->size() - 1));
     appendLog(tr("Polling started"));
     pollNext();
 }
 
+int ObdSession::pollIntervalMs(const SensorModel::Entry &e) const
+{
+    // Sensors on screen as often as the adapter allows (fast ones) or every
+    // second or two; the rest, recorded in the background, less often.
+    const obd::Pace pace = e.pid < 0 ? obd::Pace::Medium : obd::pace(quint8(e.pid));
+    switch (pace) {
+    case obd::Pace::Fast: return e.shown() ? 100 : 1000;
+    case obd::Pace::Medium: return e.shown() ? 1000 : 2000;
+    case obd::Pace::Slow: return e.shown() ? 2000 : 5000;
+    }
+    return 1000;
+}
+
 void ObdSession::pollNext()
 {
     if (m_state != Running || m_paused || m_polling)
         return;
-    const int count = m_sensors->size();
+    // Ask for the sensor that is most overdue relative to its interval, so
+    // that when the adapter cannot keep up every sensor slows down evenly.
     const qint64 nowMs = m_clock.elapsed();
-    for (int step = 0; step < count; ++step) {
-        m_pollIndex = (m_pollIndex + 1) % count;
-        const SensorModel::Entry &e = m_sensors->entry(m_pollIndex);
-        if (!e.polled())
+    int best = -1;
+    double bestRatio = 1.0;
+    qint64 nextDueMs = 500;
+    for (int row = 0; row < m_sensors->size(); ++row) {
+        const SensorModel::Entry &e = m_sensors->entry(row);
+        if (!e.available || !(e.shown() || m_recordAll))
             continue;
-        if (e.pid < 0 && nowMs - e.lastPollMs < kVoltageIntervalMs)
-            continue;
-        pollEntry(m_pollIndex);
-        return;
+        const int interval = pollIntervalMs(e);
+        const qint64 waited = nowMs - e.lastPollMs;
+        const double ratio = double(waited) / interval;
+        if (ratio >= bestRatio) {
+            best = row;
+            bestRatio = ratio;
+        } else {
+            nextDueMs = std::min(nextDueMs, interval - waited);
+        }
     }
-    // Nothing is due (all sensors off, or only the voltage is waiting).
-    m_idleTimer.start(200);
+    if (best >= 0)
+        pollEntry(best);
+    else
+        m_idleTimer.start(int(std::max<qint64>(nextDueMs, 20)));
 }
 
 void ObdSession::pollEntry(int row)
@@ -588,7 +617,9 @@ void ObdSession::handlePollReply(int row, const Elm327::Reply &reply)
     }
 
     if (value) {
-        e.series->append(m_clock.elapsed() / 1000.0, *value);
+        const double t = m_clock.elapsed() / 1000.0;
+        e.series->append(t, *value);
+        m_recorder.record(row, t, *value);
         e.misses = 0;
         m_failStreak = 0;
         ++m_samples;
@@ -607,6 +638,112 @@ void ObdSession::handlePollReply(int row, const Elm327::Reply &reply)
         const QString why = reply.error.isEmpty() ? tr("no valid data") : reply.error;
         fail(tr("Lost contact with the car (%1)").arg(why));
     }
+}
+
+// --- Recording -----------------------------------------------------------------
+
+void ObdSession::setRecordAll(bool on)
+{
+    if (m_recordAll == on)
+        return;
+    m_recordAll = on;
+    QSettings().setValue(QStringLiteral("record/all"), on);
+    emit recordAllChanged();
+    if (m_state == Running)
+        pollNext();
+}
+
+void ObdSession::startRecording()
+{
+    QStringList columns;
+    for (int row = 0; row < m_sensors->size(); ++row) {
+        const SensorSeries *series = m_sensors->entry(row).series;
+        columns << (series->unit().isEmpty() ? series->name()
+                                             : QStringLiteral("%1 [%2]").arg(series->name(), series->unit()));
+    }
+    if (m_recorder.start(Recorder::defaultDirectory(), m_connectionName, columns, m_clockStart))
+        appendLog(tr("Recording to %1").arg(QFileInfo(m_recorder.filePath()).fileName()));
+    else
+        appendLog(tr("! Cannot record: %1").arg(m_recorder.errorString()));
+    emit recordingChanged();
+    refreshRecordings();
+}
+
+void ObdSession::stopRecording()
+{
+    if (!m_recorder.isRecording())
+        return;
+    m_recorder.stop();
+    emit recordingChanged();
+    refreshRecordings();
+}
+
+void ObdSession::refreshRecordings()
+{
+    m_recorder.flush(); // so the current file shows its real size
+    const QDir dir(Recorder::defaultDirectory());
+    const QFileInfoList files = dir.entryInfoList({QStringLiteral("obd_*.csv")}, QDir::Files, QDir::Time);
+    const QLocale locale;
+    m_recordings.clear();
+    for (const QFileInfo &file : files) {
+        // obd_<yyyyMMdd>_<HHmmss>_<connection>.csv
+        const QStringList parts = file.completeBaseName().split(QLatin1Char('_'));
+        const QDateTime started = parts.size() >= 3
+                                      ? QDateTime::fromString(parts[1] + parts[2], QStringLiteral("yyyyMMddHHmmss"))
+                                      : file.lastModified();
+        QString connection = parts.size() >= 4 ? parts.mid(3).join(QLatin1Char(' ')) : QString();
+        const bool current = m_recorder.isRecording() && file.absoluteFilePath() == QFileInfo(m_recorder.filePath()).absoluteFilePath();
+        QVariantMap item;
+        item.insert(QStringLiteral("path"), file.absoluteFilePath());
+        item.insert(QStringLiteral("fileName"), file.fileName());
+        item.insert(QStringLiteral("title"), locale.toString(started.isValid() ? started : file.lastModified(),
+                                                             QLocale::ShortFormat));
+        item.insert(QStringLiteral("details"), QStringLiteral("%1 · %2").arg(connection.replace(QLatin1Char('-'), QLatin1Char(' ')),
+                                                                             locale.formattedDataSize(file.size())));
+        item.insert(QStringLiteral("current"), current);
+        m_recordings << item;
+    }
+    emit recordingsChanged();
+}
+
+QString ObdSession::exportRecording(const QString &path, const QUrl &target)
+{
+    if (QFileInfo(path).absoluteFilePath() == QFileInfo(m_recorder.filePath()).absoluteFilePath())
+        m_recorder.flush();
+
+    QFile source(path);
+    if (!source.open(QIODevice::ReadOnly))
+        return tr("Cannot read the recording: %1").arg(source.errorString());
+
+    // On Android the save dialog returns a content:// URL, which QFile opens
+    // through the system's content resolver.
+    const QString destinationName = target.isLocalFile() ? target.toLocalFile() : target.toString();
+    QFile destination(destinationName);
+    if (!destination.open(QIODevice::WriteOnly | QIODevice::Truncate))
+        return tr("Cannot write the file: %1").arg(destination.errorString());
+
+    qint64 copied = 0;
+    while (!source.atEnd()) {
+        const QByteArray chunk = source.read(256 * 1024);
+        if (chunk.isEmpty() || destination.write(chunk) != chunk.size())
+            return tr("Writing the file failed: %1").arg(destination.errorString());
+        copied += chunk.size();
+    }
+    destination.close();
+    appendLog(tr("Exported %1 to %2").arg(QFileInfo(path).fileName(), destinationName));
+    return tr("Saved %1").arg(QLocale().formattedDataSize(copied));
+}
+
+void ObdSession::deleteRecording(const QString &path)
+{
+    if (QFileInfo(path).absoluteFilePath() == QFileInfo(m_recorder.filePath()).absoluteFilePath()
+        && m_recorder.isRecording())
+        return; // the current session's file stays while it is written
+    // Only files in the recordings folder.
+    if (QFileInfo(path).absolutePath() != QFileInfo(Recorder::defaultDirectory()).absoluteFilePath())
+        return;
+    QFile::remove(path);
+    refreshRecordings();
 }
 
 // --- Fault codes ---------------------------------------------------------------

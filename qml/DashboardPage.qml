@@ -12,6 +12,7 @@ Page {
     signal backRequested()
     signal logRequested()
     signal codesRequested()
+    signal recordingsRequested()
 
     readonly property bool running: ObdSession.state === ObdSession.Running
     readonly property bool failed: ObdSession.state === ObdSession.Failed
@@ -56,6 +57,8 @@ Page {
                             let parts = [ObdSession.stateText]
                             if (page.running)
                                 parts.push(qsTr("%1/s").arg(ObdSession.sampleRate.toFixed(0)))
+                            if (ObdSession.recording)
+                                parts.push(qsTr("● REC"))
                             if (ObdSession.protocol !== "")
                                 parts.push(ObdSession.protocol)
                             return parts.join("  ·  ")
@@ -89,6 +92,16 @@ Page {
                         MenuItem {
                             text: qsTr("Fault codes…")
                             onTriggered: page.codesRequested()
+                        }
+                        MenuItem {
+                            text: qsTr("Recordings…")
+                            onTriggered: page.recordingsRequested()
+                        }
+                        MenuItem {
+                            text: qsTr("Record all sensors")
+                            checkable: true
+                            checked: ObdSession.recordAll
+                            onTriggered: ObdSession.recordAll = checked
                         }
                         MenuItem {
                             text: qsTr("Log")

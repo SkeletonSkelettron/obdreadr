@@ -28,6 +28,11 @@ const PidInfo *findPid(quint8 pid);
 // Decodes the data bytes that follow "41 <pid>" in a response.
 std::optional<double> decode(quint8 pid, const QByteArray &data);
 
+// How quickly a sensor's value changes, which sets how often it is read:
+// engine speed many times a second, coolant temperature every few seconds.
+enum class Pace { Fast, Medium, Slow };
+Pace pace(quint8 pid);
+
 // PIDs 00, 20, 40, ... answer with a bit mask of the 32 PIDs that follow them.
 bool isSupportMaskPid(quint8 pid);
 QList<quint8> pidsFromMask(quint32 mask, quint8 basePid);

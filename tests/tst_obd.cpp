@@ -2,7 +2,11 @@
 #include "obd/elmparser.h"
 #include "obd/pids.h"
 #include "obd/simecu.h"
+#include "recorder.h"
 
+#include <QDir>
+#include <QFileInfo>
+#include <QTemporaryDir>
 #include <QtTest>
 
 namespace {
@@ -204,6 +208,52 @@ private slots:
         QCOMPARE(dtc::parse(ask(ecu, QStringLiteral("03")), 0x03), QStringList());
         QCOMPARE(dtc::parse(ask(ecu, QStringLiteral("0A")), 0x0A), QStringList{QStringLiteral("P0420")});
         QCOMPARE(quint8(elm::mode01Payload(ask(ecu, QStringLiteral("0101")), 0x01)->at(0)), quint8(0x00));
+    }
+
+    void pacesSensors()
+    {
+        QCOMPARE(obd::pace(0x0C), obd::Pace::Fast);
+        QCOMPARE(obd::pace(0x15), obd::Pace::Fast);
+        QCOMPARE(obd::pace(0x05), obd::Pace::Slow);
+        QCOMPARE(obd::pace(0x2F), obd::Pace::Slow);
+        QCOMPARE(obd::pace(0x42), obd::Pace::Medium);
+    }
+
+    void recordsCsv()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        Recorder recorder;
+        const QDateTime start(QDate(2026, 11, 17), QTime(14, 0, 0));
+        const QStringList columns = {QStringLiteral("Engine speed [rpm]"), QStringLiteral("Trim, bank \"1\" [%]")};
+        QVERIFY(recorder.start(dir.path(), QStringLiteral("Demo car"), columns, start));
+        QVERIFY(recorder.isRecording());
+        recorder.record(0, 1.5, 1726.25);
+        recorder.record(1, 2.0, -3.125);
+        recorder.record(5, 2.5, 1.0); // no such column: ignored
+        recorder.stop();
+
+        const QFileInfo info(recorder.filePath());
+        QVERIFY(info.fileName().startsWith(QLatin1String("obd_")));
+        QVERIFY(info.fileName().endsWith(QLatin1String("_Demo-car.csv")));
+        QFile file(info.absoluteFilePath());
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const QList<QByteArray> lines = file.readAll().split('\n');
+        QCOMPARE(lines.size(), 4); // header, two rows, final newline
+        QCOMPARE(lines[0], QByteArray("time_s,timestamp,\"Engine speed [rpm]\",\"Trim, bank \"\"1\"\" [%]\""));
+        QCOMPARE(lines[1], QByteArray("1.500,2026-11-17 14:00:01.500,1726.25,"));
+        QCOMPARE(lines[2], QByteArray("2.000,2026-11-17 14:00:02.000,,-3.125"));
+    }
+
+    void keepsNewestRecordings()
+    {
+        QTemporaryDir dir;
+        Recorder recorder;
+        for (int i = 0; i < 4; ++i) {
+            QVERIFY(recorder.start(dir.path(), QStringLiteral("car"), {QStringLiteral("x")}, QDateTime::currentDateTime(), 2));
+            recorder.stop();
+        }
+        QCOMPARE(QDir(dir.path()).entryList({QStringLiteral("obd_*.csv")}, QDir::Files).size(), 2);
     }
 
     void simulatorEchoesUntilTurnedOff()

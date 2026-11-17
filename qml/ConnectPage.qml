@@ -9,6 +9,8 @@ import ObdReadr
 Page {
     id: page
 
+    signal recordingsRequested()
+
     header: ToolBar {
         Label {
             anchors.fill: parent
@@ -199,6 +201,33 @@ Page {
                     Button {
                         text: qsTr("Start the demo car")
                         onClicked: ObdSession.connectDemo()
+                    }
+                }
+            }
+
+            // Recordings -----------------------------------------------------
+            Pane {
+                Layout.fillWidth: true
+                Material.elevation: 2
+
+                ColumnLayout {
+                    anchors.fill: parent
+                    spacing: 8
+
+                    Label {
+                        text: qsTr("Recordings")
+                        font.pixelSize: 16
+                        font.bold: true
+                    }
+                    Label {
+                        Layout.fillWidth: true
+                        wrapMode: Text.Wrap
+                        opacity: 0.7
+                        text: qsTr("%n saved drive(s). Export them as CSV for a computer.", "", ObdSession.recordings.length)
+                    }
+                    Button {
+                        text: qsTr("Recordings…")
+                        onClicked: page.recordingsRequested()
                     }
                 }
             }

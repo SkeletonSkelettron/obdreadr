@@ -148,6 +148,29 @@ std::optional<double> decode(quint8 pid, const QByteArray &data)
     return info->decode(reinterpret_cast<const quint8 *>(data.constData()));
 }
 
+Pace pace(quint8 pid)
+{
+    switch (pid) {
+    // Engine and driver: load, trims, pressures, speed, airflow, throttle,
+    // oxygen sensors, pedal, fuel rate, torque.
+    case 0x04: case 0x06: case 0x08: case 0x0A: case 0x0B: case 0x0C: case 0x0D:
+    case 0x0E: case 0x10: case 0x11: case 0x22: case 0x23: case 0x43: case 0x44:
+    case 0x45: case 0x47: case 0x48: case 0x49: case 0x4A: case 0x4B: case 0x4C:
+    case 0x59: case 0x5A: case 0x5E: case 0x61: case 0x62:
+        return Pace::Fast;
+    // Temperatures, levels, long term trims, counters and distances.
+    case 0x05: case 0x07: case 0x09: case 0x0F: case 0x1F: case 0x21: case 0x2F:
+    case 0x30: case 0x31: case 0x33: case 0x46: case 0x4D: case 0x4E: case 0x52:
+    case 0x56: case 0x58: case 0x5B: case 0x5C: case 0x63: case 0xA6:
+        return Pace::Slow;
+    default:
+        break;
+    }
+    if ((pid >= 0x14 && pid <= 0x1B) || (pid >= 0x24 && pid <= 0x2B) || (pid >= 0x34 && pid <= 0x3B))
+        return Pace::Fast; // oxygen sensors
+    return Pace::Medium;
+}
+
 bool isSupportMaskPid(quint8 pid)
 {
     return pid % 0x20 == 0;

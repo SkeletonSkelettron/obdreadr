@@ -37,7 +37,7 @@ public:
         qint64 lastPollMs = -1000000;
         SensorSeries *series = nullptr;
 
-        bool polled() const { return (active || pinned) && available; }
+        bool shown() const { return active || pinned; }
     };
 
     using QAbstractListModel::QAbstractListModel;

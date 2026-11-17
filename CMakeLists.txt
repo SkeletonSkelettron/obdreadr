@@ -30,6 +30,7 @@ qt_add_executable(obdreadr
     src/sensorseries.h src/sensorseries.cpp
     src/sensormodel.h src/sensormodel.cpp
     src/obdsession.h src/obdsession.cpp
+    src/recorder.h src/recorder.cpp
     src/chartbase.h src/chartbase.cpp
     src/linechart.h src/linechart.cpp
     src/overlaychart.h src/overlaychart.cpp
@@ -49,6 +50,7 @@ qt_add_qml_module(obdreadr
         qml/BigValuesView.qml
         qml/SensorPicker.qml
         qml/CodesPage.qml
+        qml/RecordingsPage.qml
         qml/LogPage.qml
 )
 
@@ -93,7 +95,8 @@ if(NOT ANDROID)
             src/obd/pids.cpp
             src/obd/elmparser.cpp
             src/obd/simecu.cpp
-            src/obd/dtc.cpp)
+            src/obd/dtc.cpp
+            src/recorder.cpp)
         target_include_directories(tst_obd PRIVATE src)
         target_link_libraries(tst_obd PRIVATE Qt6::Core Qt6::Test)
         add_test(NAME tst_obd COMMAND tst_obd)

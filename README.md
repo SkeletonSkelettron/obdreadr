@@ -24,6 +24,13 @@ car through an ELM327 OBD-II adapter and draws it as scrolling charts.
 - **Fault codes** (⋮ → Fault codes): the check engine light, stored (mode 03),
   pending (07) and permanent (0A) codes with short descriptions, and clearing
   them (mode 04).
+- **Recordings for a computer.** Every connection is saved as a CSV file
+  (a time column, a timestamp column and one column per sensor, one row per
+  reading). ⋮ → Recordings exports a file through Android's save dialog, to
+  Downloads or a cloud drive. With **Record all sensors** (on by default) every
+  sensor the car supports is read in the background, each at its own pace:
+  fast-changing ones such as engine speed every second, slow ones such as
+  temperatures every few seconds; sensors on screen are read more often.
 - **Demo car**, a built-in simulated ELM327, for trying the app without a car.
 - Shows the VIN, the protocol and the battery voltage, and keeps a log of the
   conversation with the adapter (⋮ → Log).
@@ -95,9 +102,10 @@ your own, add the repository secrets `ANDROID_KEYSTORE_BASE64`,
 | `src/transport/*` | Byte pipes to the adapter: Bluetooth, BLE, TCP, simulator |
 | `src/elm327.*` | Command queue: one command at a time, answer up to the `>` prompt |
 | `src/obdsession.*` | Connecting, initializing, discovering sensors, polling |
+| `src/recorder.*` | Writing each session's readings to a CSV file |
 | `src/chartbase.*`, `src/linechart.*`, `src/overlaychart.*` | The charts, painted with `QQuickPaintedItem` |
 | `qml/` | The user interface (Qt Quick Controls, Material style) |
-| `tests/` | Unit tests of the parser, the PID formulas, fault codes and the simulator |
+| `tests/` | Unit tests of the parser, the PID formulas, fault codes, the recorder and the simulator |
 
 ## License
 
