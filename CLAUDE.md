@@ -11,6 +11,10 @@ The app's UI and the code (identifiers, comments, commit messages) are English.
 
 ## Status
 
+**Work in progress: [PLAN.md](PLAN.md)** lists the next batch of features the
+owner asked for, in order, with the design worked out. Read it first and tick
+items off there as they land.
+
 Released: v0.2.0 (colors, four views, fault codes, CSV recording/export),
 v0.3.0 (Diagnostics: health checks, readiness, mode 06) and v0.4.0 (Fuel
 tab, background service with automatic reconnect). Every push to
