@@ -32,6 +32,9 @@ QByteArray bytes(std::initializer_list<int> values)
 }
 
 const char kBanner[] = "ELM327 v1.5";
+constexpr quint16 kEngine = 0x7E8;
+constexpr quint16 kTransmission = 0x7E9;
+constexpr quint8 kTransmissionPid = 0x0D; // the one sensor both ECUs report
 
 } // namespace
 
@@ -129,7 +132,7 @@ QString SimEcu::obdCommand(const QString &cmd, double t)
         m_stored.clear();
         m_incomplete = 0x65; // clearing resets every monitor
         m_pending.clear();
-        return prefix + hex(bytes({0x44}));
+        return prefix + canAnswer(bytes({0x44}));
     default: break;
     }
     if (cmd.size() < 4)
@@ -137,27 +140,10 @@ QString SimEcu::obdCommand(const QString &cmd, double t)
     const auto pid = quint8(cmd.mid(2, 2).toInt(nullptr, 16));
 
     if (mode == 0x01) {
-        if (obd::isSupportMaskPid(pid)) {
-            if (pid != 0x00 && !m_supported.contains(pid))
-                return prefix + QStringLiteral("NO DATA");
-            quint32 mask = 0;
-            for (quint8 p : std::as_const(m_supported)) {
-                if (p > pid && p <= pid + 0x20)
-                    mask |= 0x80000000u >> (p - pid - 1);
-            }
-            QByteArray data = bytes({0x41, pid});
-            data += char(mask >> 24);
-            data += char(mask >> 16);
-            data += char(mask >> 8);
-            data += char(mask);
-            return prefix + hex(data);
-        }
-        if (!m_supported.contains(pid))
-            return prefix + QStringLiteral("NO DATA");
-        const auto data = pidData(pid, t);
-        if (!data)
-            return prefix + QStringLiteral("NO DATA");
-        return prefix + hex(bytes({0x41, pid}) + *data);
+        QList<quint8> pids;
+        for (qsizetype i = 2; i + 2 <= cmd.size() && pids.size() < 6; i += 2)
+            pids << quint8(cmd.mid(i, 2).toInt(nullptr, 16));
+        return prefix + mode01(pids, t);
     }
 
     if (mode == 0x09 && pid == 0x02)
@@ -166,20 +152,108 @@ QString SimEcu::obdCommand(const QString &cmd, double t)
     return prefix + QStringLiteral("NO DATA");
 }
 
+QString SimEcu::mode01(const QList<quint8> &pids, double t) const
+{
+    const auto maskAnswer = [this](quint8 base, const QSet<quint8> &supported) {
+        quint32 mask = 0;
+        for (quint8 p : supported) {
+            if (p > base && p <= base + 0x20)
+                mask |= 0x80000000u >> (p - base - 1);
+        }
+        QByteArray data = bytes({0x41, base});
+        data += char(mask >> 24);
+        data += char(mask >> 16);
+        data += char(mask >> 8);
+        data += char(mask);
+        return data;
+    };
+    if (pids.size() == 1 && obd::isSupportMaskPid(pids.first())) {
+        const quint8 base = pids.first();
+        if (base != 0x00 && !m_supported.contains(base))
+            return QStringLiteral("NO DATA");
+        QList<Message> answers = {{kEngine, maskAnswer(base, m_supported)}};
+        if (base == 0x00)
+            answers << Message{kTransmission, maskAnswer(base, {kTransmissionPid})};
+        return reply(answers);
+    }
+    // Each ECU answers the PIDs it has, in one message.
+    QByteArray engine = bytes({0x41});
+    QByteArray transmission = bytes({0x41});
+    for (quint8 pid : pids) {
+        if (obd::isSupportMaskPid(pid))
+            continue;
+        const auto data = m_supported.contains(pid) ? pidData(pid, t) : std::nullopt;
+        if (!data)
+            continue;
+        engine += char(pid) + *data;
+        if (pid == kTransmissionPid)
+            transmission += char(pid) + *data;
+    }
+    QList<Message> answers;
+    if (engine.size() > 1)
+        answers << Message{kEngine, engine};
+    if (transmission.size() > 1)
+        answers << Message{kTransmission, transmission};
+    return answers.isEmpty() ? QStringLiteral("NO DATA") : reply(answers);
+}
+
 QString SimEcu::canAnswer(const QByteArray &payload) const
 {
-    if (payload.size() <= 7)
-        return hex(payload);
-    // ISO-TP multi-frame answer, formatted the way an ELM327 prints it.
+    return reply({{kEngine, payload}});
+}
+
+QString SimEcu::reply(const QList<Message> &messages) const
+{
+    const QString gap = m_spaces ? QStringLiteral(" ") : QString();
     QStringList lines;
-    lines << QStringLiteral("%1").arg(payload.size(), 3, 16, QLatin1Char('0')).toUpper();
-    int offset = 0;
-    for (int frame = 0; offset < payload.size(); ++frame) {
-        const int count = frame == 0 ? 6 : 7;
-        const QByteArray chunk = payload.mid(offset, count);
-        offset += count;
-        lines << QStringLiteral("%1:").arg(frame & 0xF, 0, 16).toUpper()
-                     + (m_spaces ? QStringLiteral(" ") : QString()) + hex(chunk);
+    if (!m_headers) {
+        for (const Message &m : messages) {
+            if (m.payload.size() <= 7) {
+                lines << hex(m.payload);
+                continue;
+            }
+            // ISO-TP multi-frame answer, formatted the way an ELM327 prints it.
+            lines << QStringLiteral("%1").arg(m.payload.size(), 3, 16, QLatin1Char('0')).toUpper();
+            int offset = 0;
+            for (int frame = 0; offset < m.payload.size(); ++frame) {
+                const int count = frame == 0 ? 6 : 7;
+                const QByteArray chunk = m.payload.mid(offset, count);
+                offset += count;
+                lines << QStringLiteral("%1:").arg(frame & 0xF, 0, 16).toUpper() + gap + hex(chunk);
+            }
+        }
+        return lines.join(QLatin1Char('\r'));
+    }
+
+    // With headers: CAN frames with the PCI byte; the last one padded.
+    QList<QList<QByteArray>> frames;
+    for (const Message &m : messages) {
+        QList<QByteArray> list;
+        const QByteArray &p = m.payload;
+        if (p.size() <= 7) {
+            list << char(p.size()) + p;
+        } else {
+            list << bytes({0x10 | (int(p.size()) >> 8), int(p.size()) & 0xFF}) + p.left(6);
+            int index = 1;
+            for (qsizetype offset = 6; offset < p.size(); offset += 7, ++index) {
+                QByteArray frame = char(0x20 | (index & 0x0F)) + p.mid(offset, 7);
+                frame.append(8 - frame.size(), '\0');
+                list << frame;
+            }
+        }
+        frames << list;
+    }
+    // The ECUs answer at the same time, so their frames interleave.
+    for (qsizetype round = 0;; ++round) {
+        bool any = false;
+        for (qsizetype i = 0; i < frames.size(); ++i) {
+            if (round >= frames[i].size())
+                continue;
+            any = true;
+            lines << QString::number(messages[i].sender, 16).toUpper() + gap + hex(frames[i][round]);
+        }
+        if (!any)
+            break;
     }
     return lines.join(QLatin1Char('\r'));
 }
@@ -201,7 +275,7 @@ QString SimEcu::testsAnswer(quint8 mid) const
         data += char(mask >> 16);
         data += char(mask >> 8);
         data += char(mask);
-        return hex(data);
+        return canAnswer(data);
     }
     struct Record {
         int tid, uasid, value, min, max;
@@ -287,10 +361,5 @@ std::optional<QByteArray> SimEcu::pidData(quint8 pid, double t) const
 
 QString SimEcu::hex(const QByteArray &data) const
 {
-    QString out;
-    if (m_headers)
-        out = m_spaces ? QStringLiteral("7E8 %1 ").arg(data.size(), 2, 16, QLatin1Char('0'))
-                       : QStringLiteral("7E8%1").arg(data.size(), 2, 16, QLatin1Char('0'));
-    out += QString::fromLatin1(m_spaces ? data.toHex(' ') : data.toHex()).toUpper();
-    return out;
+    return QString::fromLatin1(m_spaces ? data.toHex(' ') : data.toHex()).toUpper();
 }

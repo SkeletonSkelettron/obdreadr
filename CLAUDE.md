@@ -39,6 +39,13 @@ from a real car yet. Things most likely to need a fix once tried:
   the notification appears (Android 13+ asks for the permission on the first
   connection) and that an automatic reconnect works. Phones with aggressive
   battery savers may still need "unrestricted" battery for the app.
+- **Several PIDs per request** (`ObdSession::pollBatch`, `elm::stripCanHeaders`):
+  never met a real car. On CAN the session turns headers on (`ATH1`) after
+  `ATDPN`, and every answer is converted back to the header-less format, so
+  if a real adapter prints headers differently, single polls could break too.
+  The first real-car recording (17 Nov 2026, before this) showed ~6 requests/s
+  for 34 sensors, so each sensor every ~3 s; the demo car went from ~24 to ~95
+  readings/s.
 - **Fuel estimates** (`src/fuel.cpp`): the MAF and speed-density ones ignore
   deceleration fuel cut-off, so they read a little high; the correction
   setting is there for that. Speed-density assumes 85 % volumetric efficiency.
@@ -66,12 +73,12 @@ QML (qml/): Main → ConnectPage → DashboardPage (5 tabs) → DiagnosticsPage,
 | Path | What it does |
 | --- | --- |
 | `src/obd/pids.*` | Mode 01 PID table (name, unit, range, decimals, formula, favorite) and `pace()` |
-| `src/obd/elmparser.*` | ELM327 text: lines, errors, payloads, support masks, ISO-TP messages, VIN |
+| `src/obd/elmparser.*` | ELM327 text: lines, errors, payloads, support masks, ISO-TP messages, CAN headers, multi-PID answers, VIN |
 | `src/obd/dtc.*` | Fault codes (modes 03/07/0A) and their descriptions |
 | `src/obd/monitors.*` | Readiness (PID 01) and mode 06 test results |
-| `src/obd/simecu.*` | Simulated adapter + car: demo mode and the tests |
+| `src/obd/simecu.*` | Simulated adapter + car (engine 7E8, transmission 7E9), headers on or off, multi-PID: demo mode and the tests |
 | `src/transport/*` | Byte pipes; Bluetooth ones only built when Qt Bluetooth exists |
-| `src/elm327.*` | Command queue with timeouts; after a timeout it drains the late answer |
+| `src/elm327.*` | Command queue with timeouts; after a timeout it drains the late answer; strips CAN headers once set |
 | `src/obdsession.*` | The state machine and everything QML calls |
 | `src/sensormodel.*`, `src/sensorseries.*` | Sensors, their samples and colors |
 | `src/recorder.*` | CSV writer, keeps the newest 50 files in AppDataLocation/recordings |
@@ -93,6 +100,17 @@ Things worth knowing before changing them:
   the sensor is on screen. With "Record all sensors" (setting `record/all`,
   default on) sensors that are not on screen are polled too. Other requests
   (codes, mode 06) just queue between polls.
+- **Several PIDs per request** (CAN protocols 6–9 only): after `ATDPN` the
+  session sends `ATH1` and `Elm327::setCanHeaderLength(3 or 8)`, so every
+  answer goes through `elm::stripCanHeaders` (frames regrouped per ECU, one
+  hex line per message) and the rest of the parsing is unchanged. A sensor
+  joins combined requests once its single answer gave its data length; the
+  most overdue sensor goes out with up to five others at least half due
+  (`01 0C 0D 10 ...`), split by `elm::mode01Values`, which drops any message
+  that does not split exactly. A sensor missing twice from combined answers
+  is read on its own; three combined requests with nothing usable turn
+  combining off for the connection. Misses there never make a sensor
+  unavailable.
 - A sensor answering NO DATA six times in a row becomes unavailable; twelve
   failures in a row across all sensors ends the session.
 - **Charts** repaint only while visible (`ChartBase::requestRepaint`); the
@@ -195,7 +213,6 @@ error annotation. Unauthenticated API calls are limited to 60 an hour.
 - Keep the screen on while connected (Android window flag via JNI).
 - An app icon (`QT_ANDROID_PACKAGE_SOURCE_DIR` with res/ drawables).
 - Freeze frame data (mode 02) next to each stored code.
-- Asking for several PIDs in one CAN request to raise the sample rate.
 - Manufacturer-specific data (mode 22) for a given make; writing settings
   (coding) was deliberately left out because it is maker-specific and risky.
 - Detecting deceleration fuel cut-off (fuel system status, PID 03) to

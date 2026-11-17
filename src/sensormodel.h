@@ -35,6 +35,8 @@ public:
         bool available = true; // false once the car keeps answering NO DATA
         int misses = 0;
         qint64 lastPollMs = -1000000;
+        int dataLength = -1;   // bytes in its answer, once read on its own
+        int batchMisses = 0;   // missing from answers to several PIDs at once
         SensorSeries *series = nullptr;
 
         bool shown() const { return active || pinned; }

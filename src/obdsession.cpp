@@ -40,6 +40,10 @@ constexpr int kConnectTimeoutMs = 20000;
 constexpr int kMissesBeforeUnavailable = 6;  // NO DATA answers in a row for one sensor
 constexpr int kFailuresBeforeLost = 12;      // failed answers in a row for all sensors
 constexpr int kMaxLogLines = 500;
+constexpr int kMaxBatch = 6;               // PIDs per request, the OBD limit on CAN
+constexpr double kBatchDueRatio = 0.5;     // others join a request once half due
+constexpr int kBatchMissesBeforeSingle = 2;
+constexpr int kBatchFailuresBeforeOff = 3;
 constexpr int kReconnectDelayMs = 15000;        // between automatic reconnects
 constexpr qint64 kReconnectForMs = 15 * 60000;  // since the car last answered
 constexpr int kServiceRefreshMs = 5000;
@@ -325,6 +329,8 @@ void ObdSession::startTransport(const QString &name, TransportFactory factory, b
     m_protocol.clear();
     m_vin.clear();
     m_supported.clear();
+    m_batching = false;
+    m_batchFailures = 0;
     m_paused = false;
     emit pausedChanged();
     emit infoChanged();
@@ -478,6 +484,17 @@ void ObdSession::onOpened()
             m_protocol = elm::protocolName(r.lines.first());
             m_isCan = elm::isCanProtocol(r.lines.first());
             emit infoChanged();
+            // On CAN, headers tell the ECUs' answers apart, which lets one
+            // request ask for several PIDs (see pollBatch).
+            const int headerChars = elm::canHeaderLength(r.lines.first());
+            if (headerChars == 0)
+                return;
+            m_elm.send(QStringLiteral("ATH1"), [this, generation, headerChars](const Elm327::Reply &h) {
+                if (!isCurrent(generation) || !h.lines.contains(QStringLiteral("OK")))
+                    return;
+                m_elm.setCanHeaderLength(headerChars);
+                m_batching = true;
+            });
         });
         setState(Discovering);
         setStatus(tr("Discovering sensors…"));
@@ -606,7 +623,7 @@ void ObdSession::startPolling()
     m_healthTimer.start();
     setState(Running);
     setStatus(tr("%n sensor(s) found", nullptr, m_sensors->size() - 1));
-    appendLog(tr("Polling started"));
+    appendLog(m_batching ? tr("Polling started, up to %1 sensors per request").arg(kMaxBatch) : tr("Polling started"));
     pollNext();
 }
 
@@ -645,6 +662,7 @@ void ObdSession::pollNext()
     int best = -1;
     double bestRatio = 1.0;
     qint64 nextDueMs = 500;
+    QList<std::pair<double, int>> due; // (ratio, row) of sensors that may join a batch
     for (int row = 0; row < m_sensors->size(); ++row) {
         const SensorModel::Entry &e = m_sensors->entry(row);
         // The fuel meter's sensors are read whenever connected, so that it
@@ -654,6 +672,8 @@ void ObdSession::pollNext()
         const int interval = pollIntervalMs(e);
         const qint64 waited = nowMs - e.lastPollMs;
         const double ratio = double(waited) / interval;
+        if (m_batching && ratio >= kBatchDueRatio && canBatch(e))
+            due.append({ratio, row});
         if (ratio >= bestRatio) {
             best = row;
             bestRatio = ratio;
@@ -661,10 +681,90 @@ void ObdSession::pollNext()
             nextDueMs = std::min(nextDueMs, interval - waited);
         }
     }
-    if (best >= 0)
-        pollEntry(best);
-    else
+    if (best < 0) {
         m_idleTimer.start(int(std::max<qint64>(nextDueMs, 20)));
+        return;
+    }
+    if (m_batching && canBatch(m_sensors->entry(best))) {
+        // The most overdue sensor, and the others that are at least half due.
+        std::sort(due.begin(), due.end(), [](const auto &a, const auto &b) { return a.first > b.first; });
+        QList<int> rows = {best};
+        for (const auto &[ratio, row] : std::as_const(due)) {
+            if (rows.size() >= kMaxBatch)
+                break;
+            if (row != best)
+                rows << row;
+        }
+        if (rows.size() > 1) {
+            pollBatch(rows);
+            return;
+        }
+    }
+    pollEntry(best);
+}
+
+bool ObdSession::canBatch(const SensorModel::Entry &e) const
+{
+    return e.pid >= 0 && e.dataLength > 0 && e.batchMisses < kBatchMissesBeforeSingle;
+}
+
+void ObdSession::pollBatch(const QList<int> &rows)
+{
+    QString command = QStringLiteral("01");
+    for (int row : rows) {
+        SensorModel::Entry &e = m_sensors->entry(row);
+        e.lastPollMs = m_clock.elapsed();
+        command += obd::hex2(quint8(e.pid));
+    }
+    const quint64 generation = m_generation;
+    m_polling = true;
+    m_elm.send(command, [this, generation, rows](const Elm327::Reply &reply) {
+        if (!isCurrent(generation))
+            return;
+        m_polling = false;
+        handleBatchReply(rows, reply);
+        if (m_state == Running)
+            QMetaObject::invokeMethod(this, &ObdSession::pollNext, Qt::QueuedConnection);
+    });
+}
+
+void ObdSession::handleBatchReply(const QList<int> &rows, const Elm327::Reply &reply)
+{
+    QHash<quint8, int> lengths;
+    for (int row : rows) {
+        const SensorModel::Entry &e = m_sensors->entry(row);
+        lengths.insert(quint8(e.pid), e.dataLength);
+    }
+    const QHash<quint8, QByteArray> values = elm::mode01Values(reply.lines, lengths);
+    const double t = m_clock.elapsed() / 1000.0;
+    QList<int> missing;
+    for (int row : rows) {
+        SensorModel::Entry &e = m_sensors->entry(row);
+        const auto data = values.constFind(quint8(e.pid));
+        const std::optional<double> value = data == values.cend() ? std::nullopt : obd::decode(quint8(e.pid), *data);
+        if (value) {
+            recordValue(row, t, *value);
+            e.batchMisses = 0;
+        } else {
+            missing << row;
+        }
+    }
+    if (missing.size() == rows.size()) {
+        // Nothing usable: the car may not take several PIDs at once. The
+        // sensors themselves are not blamed; they are read singly later.
+        if (++m_batchFailures >= kBatchFailuresBeforeOff) {
+            m_batching = false;
+            appendLog(tr("Requests for several sensors failed; reading one sensor at a time"));
+        }
+        countFailure(reply.error);
+        return;
+    }
+    m_batchFailures = 0;
+    for (int row : std::as_const(missing)) {
+        SensorModel::Entry &e = m_sensors->entry(row);
+        if (++e.batchMisses == kBatchMissesBeforeSingle)
+            appendLog(tr("%1: missing from combined requests, read on its own").arg(e.series->name()));
+    }
 }
 
 void ObdSession::pollEntry(int row)
@@ -692,17 +792,13 @@ void ObdSession::handlePollReply(int row, const Elm327::Reply &reply)
         value = elm::parseVoltage(reply.lines);
     } else if (const auto payload = elm::mode01Payload(reply.lines, quint8(e.pid))) {
         value = obd::decode(quint8(e.pid), *payload);
+        // Its length, to find it in answers to several PIDs at once.
+        if (value && m_batching)
+            e.dataLength = int(payload->size());
     }
 
     if (value) {
-        const double t = m_clock.elapsed() / 1000.0;
-        e.series->append(t, *value);
-        m_recorder.record(row, t, *value);
-        m_fuel->addSample(e.pid, t, *value);
-        m_sinceData.start();
-        e.misses = 0;
-        m_failStreak = 0;
-        ++m_samples;
+        recordValue(row, m_clock.elapsed() / 1000.0, *value);
         return;
     }
 
@@ -714,9 +810,25 @@ void ObdSession::handlePollReply(int row, const Elm327::Reply &reply)
         m_sensors->setAvailable(row, false);
         m_fuel->setAvailablePids(availablePids());
     }
+    countFailure(reply.error);
+}
 
+void ObdSession::recordValue(int row, double t, double value)
+{
+    SensorModel::Entry &e = m_sensors->entry(row);
+    e.series->append(t, value);
+    m_recorder.record(row, t, value);
+    m_fuel->addSample(e.pid, t, value);
+    m_sinceData.start();
+    e.misses = 0;
+    m_failStreak = 0;
+    ++m_samples;
+}
+
+void ObdSession::countFailure(const QString &error)
+{
     if (++m_failStreak >= kFailuresBeforeLost) {
-        const QString why = reply.error.isEmpty() ? tr("no valid data") : reply.error;
+        const QString why = error.isEmpty() ? tr("no valid data") : error;
         fail(tr("Lost contact with the car (%1)").arg(why));
     }
 }

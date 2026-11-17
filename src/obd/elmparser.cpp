@@ -2,6 +2,7 @@
 
 #include "obd/pids.h"
 
+#include <algorithm>
 #include <iterator>
 #include <utility>
 
@@ -16,6 +17,15 @@ QString stripFrameIndex(const QString &compacted)
     if (colon > 0 && colon <= 2)
         return compacted.mid(colon + 1);
     return compacted;
+}
+
+// Hex digits only, of any count (an 11-bit CAN header makes it odd).
+bool hexDigits(const QString &text)
+{
+    return !text.isEmpty() && std::all_of(text.begin(), text.end(), [](QChar c) {
+        const char ch = c.toLatin1();
+        return (ch >= '0' && ch <= '9') || (ch >= 'A' && ch <= 'F');
+    });
 }
 
 } // namespace
@@ -180,6 +190,118 @@ QList<QByteArray> messages(const QStringList &lines)
     return result;
 }
 
+QStringList stripCanHeaders(const QStringList &lines, int headerChars)
+{
+    if (headerChars <= 0)
+        return lines;
+    struct Message {
+        QString sender;
+        QByteArray bytes;
+        int length = 0;
+        int nextIndex = 1; // of the next consecutive frame
+        bool open = false; // waiting for more frames
+        bool broken = false;
+    };
+    QStringList passed;
+    QList<Message> found;
+    const auto openMessage = [&found](const QString &sender) -> Message * {
+        for (qsizetype i = found.size() - 1; i >= 0; --i) {
+            if (found[i].sender == sender && found[i].open)
+                return &found[i];
+        }
+        return nullptr;
+    };
+
+    for (const QString &line : lines) {
+        const QString c = compact(line);
+        const qsizetype dataChars = c.size() - headerChars;
+        const bool framed = hexDigits(c) && dataChars >= 2 && dataChars % 2 == 0
+                            && (headerChars != 8 || c.startsWith(QLatin1String("18DA")));
+        if (!framed) {
+            passed << line;
+            continue;
+        }
+        const QString sender = c.left(headerChars);
+        const QByteArray frame = QByteArray::fromHex(c.mid(headerChars).toLatin1());
+        const auto pci = quint8(frame.at(0));
+        switch (pci >> 4) {
+        case 0x0: { // single frame
+            const int length = pci & 0x0F;
+            if (length == 0 || frame.size() < 1 + length)
+                break;
+            found << Message{sender, frame.mid(1, length), length, 1, false, false};
+            break;
+        }
+        case 0x1: { // first frame
+            if (frame.size() < 2)
+                break;
+            const int length = (pci & 0x0F) << 8 | quint8(frame.at(1));
+            found << Message{sender, frame.mid(2), length, 1, true, false};
+            break;
+        }
+        case 0x2: { // consecutive frame
+            Message *m = openMessage(sender);
+            if (!m)
+                break;
+            if ((pci & 0x0F) != (m->nextIndex & 0x0F))
+                m->broken = true;
+            ++m->nextIndex;
+            m->bytes += frame.mid(1);
+            if (m->bytes.size() >= m->length)
+                m->open = false;
+            break;
+        }
+        default: // flow control
+            break;
+        }
+    }
+
+    // ECU by ECU, in the order each first answered.
+    QStringList result = passed;
+    QStringList senders;
+    for (const Message &m : std::as_const(found)) {
+        if (!senders.contains(m.sender))
+            senders << m.sender;
+    }
+    for (const QString &sender : std::as_const(senders)) {
+        for (const Message &m : std::as_const(found)) {
+            if (m.sender != sender || m.broken || m.bytes.size() < m.length)
+                continue;
+            result << QString::fromLatin1(m.bytes.left(m.length).toHex().toUpper());
+        }
+    }
+    return result;
+}
+
+QHash<quint8, QByteArray> mode01Values(const QStringList &lines, const QHash<quint8, int> &lengths)
+{
+    QHash<quint8, QByteArray> values;
+    for (const QByteArray &message : messages(lines)) {
+        if (message.size() < 3 || quint8(message.at(0)) != 0x41)
+            continue;
+        QHash<quint8, QByteArray> found;
+        qsizetype i = 1;
+        bool exact = true;
+        while (i < message.size()) {
+            const auto pid = quint8(message.at(i));
+            const int length = lengths.value(pid, -1);
+            if (length <= 0 || i + 1 + length > message.size() || found.contains(pid)) {
+                exact = false;
+                break;
+            }
+            found.insert(pid, message.mid(i + 1, length));
+            i += 1 + length;
+        }
+        if (!exact)
+            continue;
+        for (auto it = found.cbegin(); it != found.cend(); ++it) {
+            if (!values.contains(it.key()))
+                values.insert(it.key(), it.value());
+        }
+    }
+    return values;
+}
+
 QString parseVin(const QStringList &lines)
 {
     bool framed = false;
@@ -274,6 +396,18 @@ bool isCanProtocol(const QString &dpn)
     bool ok = false;
     const int index = code.toInt(&ok, 16);
     return code.size() == 1 && ok && index >= 6 && index <= 0xC;
+}
+
+int canHeaderLength(const QString &dpn)
+{
+    QString code = compact(dpn);
+    if (code.size() == 2 && code.startsWith(QLatin1Char('A')))
+        code = code.mid(1);
+    if (code == QLatin1String("6") || code == QLatin1String("8"))
+        return 3;
+    if (code == QLatin1String("7") || code == QLatin1String("9"))
+        return 8;
+    return 0;
 }
 
 } // namespace elm

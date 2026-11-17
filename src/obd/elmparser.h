@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QByteArray>
+#include <QHash>
 #include <QList>
 #include <QString>
 #include <QStringList>
@@ -38,6 +39,22 @@ std::optional<quint32> supportedMask(const QStringList &lines, quint8 basePid, q
 // cut to its length; every other hex line is a message of its own.
 QList<QByteArray> messages(const QStringList &lines);
 
+// With headers on (AT H1) a CAN adapter prints each frame with its sender
+// and its ISO-TP PCI byte: "7E8 06 41 0C 1A F8", or "7E8 10 0A 41 ..." and
+// "7E8 21 ..." for a longer answer, with several ECUs' frames possibly
+// interleaved. This turns them into one hex line per message, ECU by ECU,
+// which the other functions here read like header-less answers.
+// `headerChars` is 3 for 11-bit and 8 for 29-bit identifiers; lines that do
+// not look like frames (errors, an adapter ignoring AT H1) pass unchanged.
+QStringList stripCanHeaders(const QStringList &lines, int headerChars);
+
+// The data of each PID in an answer to a mode 01 request for several PIDs
+// ("01 0C 0D 10"): every message "41 0C a b 0D c 10 d e" is split using
+// `lengths` (PID -> data bytes, learned from single requests). A message
+// that does not split exactly into known PIDs is ignored as a whole; when
+// several ECUs answer a PID, the first one counts.
+QHash<quint8, QByteArray> mode01Values(const QStringList &lines, const QHash<quint8, int> &lengths);
+
 // The vehicle identification number from a "09 02" response (CAN multi-frame
 // or older one-line-per-message formats), or an empty string.
 QString parseVin(const QStringList &lines);
@@ -50,5 +67,9 @@ QString protocolName(const QString &dpn);
 
 // Whether an "AT DPN" answer is one of the CAN protocols (6 to C).
 bool isCanProtocol(const QString &dpn);
+
+// Hex digits of the CAN identifier an adapter prints with headers on: 3 for
+// the 11-bit OBD protocols (6, 8), 8 for the 29-bit ones (7, 9), else 0.
+int canHeaderLength(const QString &dpn);
 
 } // namespace elm

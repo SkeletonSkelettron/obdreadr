@@ -209,6 +209,12 @@ private:
     void pollNext();
     void pollEntry(int row);
     void handlePollReply(int row, const Elm327::Reply &reply);
+    // CAN cars: up to six sensors in one request.
+    bool canBatch(const SensorModel::Entry &e) const;
+    void pollBatch(const QList<int> &rows);
+    void handleBatchReply(const QList<int> &rows, const Elm327::Reply &reply);
+    void recordValue(int row, double t, double value);
+    void countFailure(const QString &error);
     int pollIntervalMs(const SensorModel::Entry &e) const;
     QSet<int> availablePids() const;
     bool keepRunning() const;
@@ -270,6 +276,8 @@ private:
 
     bool m_paused = false;
     bool m_polling = false;
+    bool m_batching = false; // CAN with headers on: several PIDs per request
+    int m_batchFailures = 0;
     int m_failStreak = 0;
     int m_samples = 0;
     double m_sampleRate = 0;

@@ -529,6 +529,103 @@ private slots:
         QVERIFY2(average > 3 && average < 20, qPrintable(QString::number(average)));
     }
 
+    void stripsCanHeaders()
+    {
+        // Two ECUs answer PID 00 in one frame each.
+        const QStringList masks = elm::stripCanHeaders(
+            {QStringLiteral("7E8 06 41 00 BE 3F A8 13"), QStringLiteral("7E9 06 41 00 00 08 00 00")}, 3);
+        QCOMPARE(masks, (QStringList{QStringLiteral("4100BE3FA813"), QStringLiteral("410000080000")}));
+        QCOMPARE(*elm::supportedMask(masks, 0x00), 0xBE3FA813u | 0x00080000u);
+
+        // The engine's two frames with the transmission's frame between them;
+        // the padding of the last frame is dropped.
+        const QStringList interleaved = {
+            QStringLiteral("7E8 10 0B 41 0C 1A F8 0D 32"),
+            QStringLiteral("7E9 03 41 0D 32"),
+            QStringLiteral("7E8 21 10 01 2C 11 40 00 00"),
+        };
+        QCOMPARE(elm::stripCanHeaders(interleaved, 3),
+                 (QStringList{QStringLiteral("410C1AF80D3210012C1140"), QStringLiteral("410D32")}));
+        // Without spaces, and 29-bit identifiers.
+        QCOMPARE(elm::stripCanHeaders({QStringLiteral("7E804410C1AF8")}, 3), QStringList{QStringLiteral("410C1AF8")});
+        QCOMPARE(elm::stripCanHeaders({QStringLiteral("18 DA F1 10 04 41 0C 1A F8")}, 8),
+                 QStringList{QStringLiteral("410C1AF8")});
+        // Errors and header-less lines pass; a frame out of sequence spoils its message.
+        QCOMPARE(elm::stripCanHeaders({QStringLiteral("NO DATA")}, 3), QStringList{QStringLiteral("NO DATA")});
+        QCOMPARE(elm::stripCanHeaders({QStringLiteral("410C1AF8")}, 3), QStringList{QStringLiteral("410C1AF8")});
+        QCOMPARE(elm::stripCanHeaders({QStringLiteral("7E8 10 0B 41 0C 1A F8 0D 32"),
+                                       QStringLiteral("7E8 22 10 01 2C 11 40 00 00")}, 3),
+                 QStringList());
+        QCOMPARE(elm::canHeaderLength(QStringLiteral("A6")), 3);
+        QCOMPARE(elm::canHeaderLength(QStringLiteral("9")), 8);
+        QCOMPARE(elm::canHeaderLength(QStringLiteral("A3")), 0);
+    }
+
+    void splitsMultiPidAnswers()
+    {
+        const QHash<quint8, int> lengths = {{0x0C, 2}, {0x0D, 1}, {0x10, 2}, {0x11, 1}};
+        const QStringList lines = {QStringLiteral("410C1AF80D3210012C1140"), QStringLiteral("410D33")};
+        const QHash<quint8, QByteArray> values = elm::mode01Values(lines, lengths);
+        QCOMPARE(values.size(), 4);
+        QCOMPARE(values.value(0x0C), QByteArray::fromHex("1AF8"));
+        QCOMPARE(values.value(0x0D), QByteArray::fromHex("32")); // the first ECU's
+        QCOMPARE(values.value(0x10), QByteArray::fromHex("012C"));
+        QCOMPARE(values.value(0x11), QByteArray::fromHex("40"));
+        // The header-less multi-frame format works the same way.
+        const QStringList framed = {QStringLiteral("00B"), QStringLiteral("0: 41 0C 1A F8 0D 32"),
+                                    QStringLiteral("1: 10 01 2C 11 40 00 00")};
+        QCOMPARE(elm::mode01Values(framed, lengths).size(), 4);
+        // A message that does not split exactly is not trusted at all.
+        QVERIFY(elm::mode01Values({QStringLiteral("410C1AF80D")}, lengths).isEmpty());
+        QVERIFY(elm::mode01Values({QStringLiteral("410C1AF805")}, lengths).isEmpty()); // 05: length unknown
+        QVERIFY(elm::mode01Values({QStringLiteral("NO DATA")}, lengths).isEmpty());
+    }
+
+    void readsSeveralPidsFromSimulatedCar()
+    {
+        SimEcu ecu;
+        for (const char *command : {"ATE0", "ATS0", "ATH1"})
+            ask(ecu, QString::fromLatin1(command));
+        const auto askCan = [&](const QString &command, double t) {
+            return elm::stripCanHeaders(ask(ecu, command, t), 3);
+        };
+        // Both ECUs answer; the transmission reports the speed too.
+        const QStringList raw = ask(ecu, QStringLiteral("010D"), 30);
+        QCOMPARE(raw.size(), 2);
+        QVERIFY(raw[1].startsWith(QLatin1String("7E9")));
+
+        // Lengths from single requests, then one request for six PIDs.
+        const QList<quint8> pids = {0x0C, 0x0D, 0x10, 0x11, 0x05, 0x5E};
+        QHash<quint8, int> lengths;
+        QHash<quint8, double> single;
+        for (quint8 pid : pids) {
+            const auto payload = elm::mode01Payload(askCan(QStringLiteral("01") + obd::hex2(pid), 30), pid);
+            QVERIFY2(payload, qPrintable(obd::hex2(pid)));
+            lengths.insert(pid, int(payload->size()));
+            single.insert(pid, *obd::decode(pid, *payload));
+        }
+        QString command = QStringLiteral("01");
+        for (quint8 pid : pids)
+            command += obd::hex2(pid);
+        const QStringList frames = ask(ecu, command, 30);
+        QVERIFY(frames.size() >= 3); // first frame, the transmission's, consecutive frames
+        QVERIFY(frames[1].startsWith(QLatin1String("7E9")));
+        const QHash<quint8, QByteArray> values = elm::mode01Values(elm::stripCanHeaders(frames, 3), lengths);
+        QCOMPARE(values.size(), pids.size());
+        for (quint8 pid : pids)
+            QCOMPARE(*obd::decode(pid, values.value(pid)), single.value(pid));
+
+        // A PID the car lacks is left out; one it has none of is NO DATA.
+        QCOMPARE(elm::mode01Values(askCan(QStringLiteral("010C0A"), 30), lengths).size(), 1);
+        QCOMPARE(elm::errorIn(askCan(QStringLiteral("010A"), 30)), QStringLiteral("NO DATA"));
+        // Everything else still reads through the header stripping.
+        QCOMPARE(elm::parseVin(askCan(QStringLiteral("0902"), 30)), SimEcu::vin());
+        QCOMPARE(dtc::parse(askCan(QStringLiteral("03"), 30), 0x03),
+                 (QStringList{QStringLiteral("P0133"), QStringLiteral("P0420")}));
+        QCOMPARE(obd::parseTests(askCan(QStringLiteral("06A4"), 30)).size(), 2);
+        QVERIFY(elm::supportedMask(askCan(QStringLiteral("0100"), 30), 0x00));
+    }
+
     void simulatorEchoesUntilTurnedOff()
     {
         SimEcu ecu;

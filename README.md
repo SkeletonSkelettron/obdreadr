@@ -8,6 +8,8 @@ car through an ELM327 OBD-II adapter and draws it as scrolling charts.
   decode: engine speed, vehicle speed, coolant, intake and oil temperatures,
   load, throttle, MAF, manifold pressure, fuel trims, O2 sensors, fuel level,
   fuel rate, control module voltage and about 80 more.
+- **Faster on CAN cars** (most cars from 2008 on): up to six sensors are read
+  with one request, which multiplies how often each sensor updates.
 - **Bluetooth, BLE and Wi-Fi adapters.** Classic Bluetooth (SPP), Bluetooth
   Low Energy (finds the adapter's serial service by itself) and Wi-Fi
   (`192.168.0.10:35000` by default).
@@ -134,7 +136,7 @@ your own, add the repository secrets `ANDROID_KEYSTORE_BASE64`,
 | `src/recorder.*` | Writing each session's readings to a CSV file |
 | `src/chartbase.*`, `src/linechart.*`, `src/overlaychart.*` | The charts, painted with `QQuickPaintedItem` |
 | `qml/` | The user interface (Qt Quick Controls, Material style) |
-| `tests/` | Unit tests of the parser, PID formulas, fault codes, monitors, health checks, fuel consumption, the recorder and the simulator |
+| `tests/` | Unit tests of the parser (CAN headers, multi-PID answers), PID formulas, fault codes, monitors, health checks, fuel consumption, the recorder and the simulator |
 
 ## License
 

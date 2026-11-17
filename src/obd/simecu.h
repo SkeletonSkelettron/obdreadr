@@ -7,9 +7,12 @@
 
 #include <optional>
 
-// A pretend ELM327 adapter plugged into a pretend car. It answers the same
-// text commands a real adapter does, so the demo mode and the unit tests run
-// the real protocol code.
+// A pretend ELM327 adapter plugged into a pretend car with two ECUs on CAN:
+// the engine (7E8), which answers nearly everything, and the transmission
+// (7E9), which also reports vehicle speed. It answers the same text commands
+// a real adapter does, with or without headers, including requests for up to
+// six PIDs at once, so the demo mode and the unit tests run the real
+// protocol code.
 class SimEcu
 {
 public:
@@ -25,9 +28,18 @@ private:
     QString atCommand(const QString &cmd);
     QString obdCommand(const QString &cmd, double t);
     std::optional<QByteArray> pidData(quint8 pid, double t) const;
+    struct Message {
+        quint16 sender; // CAN identifier
+        QByteArray payload;
+    };
     QString hex(const QByteArray &bytes) const;
-    // One line, or ISO-TP frames when the answer does not fit in one.
+    // The messages as the adapter prints them: without headers one line per
+    // message, or ISO-TP frames with a length line when it does not fit in
+    // one; with headers every frame with its sender and PCI byte, the ECUs'
+    // frames interleaved.
+    QString reply(const QList<Message> &messages) const;
     QString canAnswer(const QByteArray &payload) const;
+    QString mode01(const QList<quint8> &pids, double t) const;
     QString codesAnswer(quint8 service, const QList<quint16> &codes) const;
 
     QSet<quint8> m_supported;

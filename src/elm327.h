@@ -35,6 +35,11 @@ public:
     // When false, only failed commands are logged.
     void setVerbose(bool verbose) { m_verbose = verbose; }
 
+    // After AT H1 on a CAN protocol: the hex digits of the CAN identifier,
+    // so that answers are passed on without headers, one line per message
+    // (elm::stripCanHeaders). 0 turns it off; a new transport resets it.
+    void setCanHeaderLength(int hexChars) { m_headerChars = hexChars; }
+
 signals:
     void logLine(const QString &line);
 
@@ -60,4 +65,5 @@ private:
     // before sending anything else so answers stay paired with commands.
     bool m_draining = false;
     bool m_verbose = true;
+    int m_headerChars = 0;
 };

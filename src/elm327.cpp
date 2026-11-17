@@ -19,6 +19,7 @@ void Elm327::setTransport(Transport *transport)
 {
     reset();
     disconnect(m_dataConnection);
+    m_headerChars = 0;
     m_transport = transport;
     if (transport)
         m_dataConnection = connect(transport, &Transport::dataReceived, this, &Elm327::onData);
@@ -84,7 +85,9 @@ void Elm327::onData(const QByteArray &data)
         return; // unsolicited text
 
     m_timer.stop();
-    const QStringList lines = elm::cleanLines(elm::splitLines(raw), m_current->command);
+    QStringList lines = elm::cleanLines(elm::splitLines(raw), m_current->command);
+    if (m_headerChars > 0)
+        lines = elm::stripCanHeaders(lines, m_headerChars);
     finish(lines, elm::errorIn(lines));
 }
 
