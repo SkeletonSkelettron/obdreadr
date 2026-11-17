@@ -18,9 +18,9 @@ installs on the phone from
 `https://github.com/SkeletonSkelettron/obdreadr/releases/download/continuous/obdreadr-arm64-v8a.apk`.
 
 The first version was confirmed working on a phone with a real car. The
-features after it (views, codes, recording, diagnostics) pass the unit tests
-and the demo car but have not been reported back from a real car yet. Things
-most likely to need a fix once tried:
+features after it (views, codes, recording, diagnostics, fuel, background
+service) pass the unit tests and the demo car but have not been reported back
+from a real car yet. Things most likely to need a fix once tried:
 
 - **CSV export** uses `FileDialog` in SaveFile mode, which on Android should
   open the system "create document" dialog and return a `content://` URL that
@@ -32,6 +32,15 @@ most likely to need a fix once tried:
 - **Mode 06 scaling** of rarer unit/scaling IDs (`src/obd/monitors.cpp`);
   pass/fail is computed on raw values, so only the displayed numbers could be off.
 - **Health check limits** (`src/health.cpp`) are general rules of thumb.
+- **Background service** (`android/`, `src/background.cpp`): never run on a
+  phone. Check that polling goes on with the screen off (Qt's event loop keeps
+  running because of `android.app.background_running` in the manifest), that
+  the notification appears (Android 13+ asks for the permission on the first
+  connection) and that an automatic reconnect works. Phones with aggressive
+  battery savers may still need "unrestricted" battery for the app.
+- **Fuel estimates** (`src/fuel.cpp`): the MAF and speed-density ones ignore
+  deceleration fuel cut-off, so they read a little high; the correction
+  setting is there for that. Speed-density assumes 85 % volumetric efficiency.
 
 ## Layout and data flow
 
@@ -45,9 +54,12 @@ Transport (BT classic / BLE / TCP / simulator)
              │     pinned sensors (Overlay, Selected tabs)
              ├─ Recorder: every reading to a CSV file per session
              ├─ health::evaluate every 2 s on the series
+             ├─ FuelMeter: distance and fuel from the readings (now, drive,
+             │     measurement, total), its sensors always polled
+             ├─ background::start/update/stop → ObdService (Android)
              └─ fault codes, readiness, mode 06 on request
-QML (qml/): Main → ConnectPage → DashboardPage (4 tabs) → DiagnosticsPage,
-            RecordingsPage, LogPage
+QML (qml/): Main → ConnectPage → DashboardPage (5 tabs) → DiagnosticsPage,
+            RecordingsPage, LogPage; ConnectPage → FuelPage, RecordingsPage
 ```
 
 | Path | What it does |
@@ -63,6 +75,10 @@ QML (qml/): Main → ConnectPage → DashboardPage (4 tabs) → DiagnosticsPage,
 | `src/sensormodel.*`, `src/sensorseries.*` | Sensors, their samples and colors |
 | `src/recorder.*` | CSV writer, keeps the newest 50 files in AppDataLocation/recordings |
 | `src/health.*` | Health checks on live data |
+| `src/fuel.*` | Fuel flow from fuel rate, MAF or speed-density; trapezoid integrator |
+| `src/fuelmeter.*` | Fuel tab's data: now, this drive, measurement, total, history; persisted |
+| `src/background.*` | JNI calls into `ObdBackground.java`; no-ops off Android |
+| `android/` | Custom manifest (Qt 6.10 template + service, permissions, background running), Java service, notification icon, debug keystore |
 | `src/chartbase.*`, `linechart.*`, `overlaychart.*` | `QQuickPaintedItem` charts |
 | `tests/tst_obd.cpp` | QtTest unit tests of all the pure logic |
 
@@ -86,8 +102,25 @@ Things worth knowing before changing them:
   so the demo and tests cover it, an answer in `SimEcu::pidData`.
 - **Adding any protocol feature:** teach `SimEcu` to answer it and add a test
   that runs it against the simulator.
+- **Fuel meter.** `ObdSession` feeds every reading to `FuelMeter::addSample`;
+  the meter picks a method from the available PIDs and the fuel type, and its
+  `inputs()` are polled even with "Record all sensors" off (fast while the Fuel
+  tab is on screen). Distance and fuel are integrated per sample with a
+  10 s maximum gap. Fuel is stored raw; the correction is applied when shown.
+  "This drive" starts from zero only on a connection the user starts, not on
+  Retry or an automatic reconnect.
+- **Background.** With `background/enabled` (default on, Android only) a
+  connection starts `ObdService` (foreground, type connectedDevice, partial
+  wake lock); the notification text is refreshed every 5 s. `fail()` schedules
+  a reconnect every 15 s while the car answered within the last 15 minutes;
+  `disconnectAdapter()` stops both. Android does not let an app start a
+  foreground service from the background, so an automatic reconnect only
+  updates the running one. When upgrading Qt, compare `android/AndroidManifest.xml`
+  with the new `qtbase/src/android/templates/AndroidManifest.xml`.
 - Settings (QSettings): `wifi/*`, `bt/*`, `sensors/active`, `sensors/pinned`,
-  `view/window`, `view/tab`, `record/all`.
+  `view/window`, `view/tab`, `record/all`, `background/enabled`, `fuel/type`,
+  `fuel/engineLiters`, `fuel/correction`, `fuel/total/*`, `fuel/trip/*`,
+  `fuel/history`.
 
 ## Build and test
 
@@ -112,8 +145,9 @@ cmake --build build-android --target apk
 
 On the owner's work PC Qt for Android is not installed and AppLocker blocks
 running the built executables, so there only the desktop compile and the QML
-lint were run locally; the tests and the APK came from CI. At home, check what
-is installed before assuming either.
+lint were run locally; the tests and the APK came from CI. The home PC
+(Ubuntu) has the distribution's Qt 6.10 dev packages, cmake and ninja, so the
+desktop build, the tests and the QML lint run there; no Android toolchain.
 
 QML conventions: `pragma ComponentBehavior: Bound`, delegates with `required`
 properties, ids qualified — that keeps `all_qmllint` clean.
@@ -163,5 +197,8 @@ error annotation. Unauthenticated API calls are limited to 60 an hour.
 - Asking for several PIDs in one CAN request to raise the sample rate.
 - Manufacturer-specific data (mode 22) for a given make; writing settings
   (coding) was deliberately left out because it is maker-specific and risky.
-- Trip statistics (fuel used, average consumption) from MAF or fuel rate and speed.
+- Detecting deceleration fuel cut-off (fuel system status, PID 03) to
+  improve the MAF and speed-density estimates.
+- Starting by itself when the adapter appears (a boot or Bluetooth receiver
+  and a Qt service process); today the app must be opened to connect.
 - A Georgian translation of the UI (strings are already in `tr`/`qsTr`).

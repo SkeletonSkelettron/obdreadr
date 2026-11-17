@@ -10,6 +10,7 @@ Page {
     id: page
 
     signal recordingsRequested()
+    signal fuelRequested()
 
     header: ToolBar {
         Label {
@@ -201,6 +202,36 @@ Page {
                     Button {
                         text: qsTr("Start the demo car")
                         onClicked: ObdSession.connectDemo()
+                    }
+                }
+            }
+
+            // Fuel -----------------------------------------------------------
+            Pane {
+                Layout.fillWidth: true
+                Material.elevation: 2
+
+                ColumnLayout {
+                    anchors.fill: parent
+                    spacing: 8
+
+                    Label {
+                        text: qsTr("Fuel consumption")
+                        font.pixelSize: 16
+                        font.bold: true
+                    }
+                    Label {
+                        Layout.fillWidth: true
+                        wrapMode: Text.Wrap
+                        opacity: 0.7
+                        text: {
+                            const total = ObdSession.fuel.total
+                            return qsTr("Total %1, %2 L/100 km on average.").arg(total.distance).arg(total.average)
+                        }
+                    }
+                    Button {
+                        text: qsTr("Fuel…")
+                        onClicked: page.fuelRequested()
                     }
                 }
             }

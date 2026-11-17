@@ -33,6 +33,9 @@ qt_add_executable(obdreadr
     src/obdsession.h src/obdsession.cpp
     src/recorder.h src/recorder.cpp
     src/health.h src/health.cpp
+    src/fuel.h src/fuel.cpp
+    src/fuelmeter.h src/fuelmeter.cpp
+    src/background.h src/background.cpp
     src/chartbase.h src/chartbase.cpp
     src/linechart.h src/linechart.cpp
     src/overlaychart.h src/overlaychart.cpp
@@ -58,6 +61,8 @@ qt_add_qml_module(obdreadr
         qml/TestsView.qml
         qml/RecordingsPage.qml
         qml/LogPage.qml
+        qml/FuelView.qml
+        qml/FuelPage.qml
 )
 
 target_include_directories(obdreadr PRIVATE src)
@@ -82,6 +87,8 @@ set_target_properties(obdreadr PROPERTIES
     QT_ANDROID_APP_NAME "OBD Reader"
     QT_ANDROID_VERSION_NAME "${PROJECT_VERSION}"
     QT_ANDROID_VERSION_CODE "${OBD_VERSION_CODE}"
+    # The manifest with the background service, its Java code and icon.
+    QT_ANDROID_PACKAGE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/android"
 )
 
 if(NOT ANDROID) # on Android the app is a library packaged by the apk target
@@ -105,7 +112,9 @@ if(NOT ANDROID)
             src/obd/monitors.cpp
             src/recorder.cpp
             src/sensorseries.cpp
-            src/health.cpp)
+            src/health.cpp
+            src/fuel.cpp
+            src/fuelmeter.h src/fuelmeter.cpp)
         target_include_directories(tst_obd PRIVATE src)
         target_link_libraries(tst_obd PRIVATE Qt6::Core Qt6::Gui Qt6::Qml Qt6::Test)
         add_test(NAME tst_obd COMMAND tst_obd)

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "elm327.h"
+#include "fuelmeter.h"
 #include "recorder.h"
 #include "sensormodel.h"
 
@@ -71,6 +72,11 @@ class ObdSession : public QObject
     Q_PROPERTY(QString lastBtAddress READ lastBtAddress NOTIFY settingsChanged)
     Q_PROPERTY(QString lastBtName READ lastBtName NOTIFY settingsChanged)
     Q_PROPERTY(bool lastBtBle READ lastBtBle NOTIFY settingsChanged)
+    Q_PROPERTY(FuelMeter *fuel READ fuel CONSTANT)
+    Q_PROPERTY(bool backgroundSupported READ backgroundSupported CONSTANT)
+    Q_PROPERTY(bool background READ background WRITE setBackground NOTIFY backgroundChanged)
+    Q_PROPERTY(bool batteryRestricted READ batteryRestricted NOTIFY backgroundChanged)
+    Q_PROPERTY(bool reconnecting READ reconnecting NOTIFY stateChanged)
 
 public:
     enum State { Disconnected, Connecting, Initializing, Discovering, Running, Failed };
@@ -122,6 +128,18 @@ public:
     QString lastBtAddress() const;
     QString lastBtName() const;
     bool lastBtBle() const;
+    FuelMeter *fuel() const { return m_fuel; }
+
+    // Background: on Android a foreground service keeps the app reading the
+    // car with the screen off, and a lost connection is retried for a while
+    // (setting `background/enabled`).
+    bool backgroundSupported() const;
+    bool background() const { return m_background; }
+    void setBackground(bool on);
+    bool batteryRestricted() const;
+    bool reconnecting() const { return m_reconnectTimer.isActive(); }
+    // Asks Android to stop optimizing the app's battery use.
+    Q_INVOKABLE void allowBackground();
 
     Q_INVOKABLE void startScan();
     Q_INVOKABLE void stopScan();
@@ -170,11 +188,13 @@ signals:
     void scanningChanged();
     void devicesChanged();
     void settingsChanged();
+    void backgroundChanged();
 
 private:
     using TransportFactory = std::function<Transport *()>;
 
-    void startTransport(const QString &name, TransportFactory factory);
+    // A new drive unless reconnecting to the same adapter.
+    void startTransport(const QString &name, TransportFactory factory, bool newDrive = true);
     void teardown();
     void fail(const QString &message);
     void setState(State state);
@@ -190,12 +210,28 @@ private:
     void pollEntry(int row);
     void handlePollReply(int row, const Elm327::Reply &reply);
     int pollIntervalMs(const SensorModel::Entry &e) const;
+    QSet<int> availablePids() const;
+    bool keepRunning() const;
+    void startService();
+    void updateService();
+    void stopService();
+    void scheduleReconnect();
     void startRecording();
     void stopRecording();
     void discoverTests(quint8 baseMid);
     void queryTests(QList<quint8> mids);
     void resetDiagnostics();
     bool isCurrent(quint64 generation) const { return generation == m_generation; }
+
+    FuelMeter *m_fuel;
+    QSet<int> m_fuelPids;   // read for the fuel meter even when not on screen
+    bool m_newDrive = true; // the next discovery starts "this drive" from zero
+    bool m_background = true;
+    bool m_serviceOn = false;
+    QString m_serviceText;
+    QTimer m_serviceTimer;   // refreshes the notification
+    QTimer m_reconnectTimer;
+    QElapsedTimer m_sinceData; // since the car last answered, for giving up on reconnecting
 
     void withBluetoothPermission(std::function<void()> action);
 #ifdef OBD_HAVE_BLUETOOTH

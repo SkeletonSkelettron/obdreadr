@@ -27,6 +27,14 @@ ApplicationWindow {
         anchors.fill: parent
         initialItem: ConnectPage {
             onRecordingsRequested: stack.push(recordingsPage)
+            onFuelRequested: stack.push(fuelPage)
+        }
+    }
+
+    Component {
+        id: fuelPage
+        FuelPage {
+            onBackRequested: stack.pop()
         }
     }
 

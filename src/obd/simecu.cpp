@@ -250,7 +250,7 @@ std::optional<QByteArray> SimEcu::pidData(quint8 pid, double t) const
     const double throttle = std::clamp(12 + 30 * (0.5 + 0.5 * std::sin(t / 5.0)), 0.0, 100.0);
     const double load = std::clamp(throttle * 1.4 + 10, 0.0, 100.0);
     const double coolant = std::min(90.0, 25 + t * 0.6) + std::sin(t / 7);
-    const double maf = rpm * load / 4000.0;
+    const double maf = rpm * load / 10000.0; // a 1.6 litre engine: 3–4 g/s at idle
 
     switch (pid) {
     // Spark ignition; misfire, fuel and components monitors complete;

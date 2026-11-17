@@ -122,10 +122,13 @@ Page {
             currentIndex: ObdSession.viewTab
 
             Repeater {
-                model: [qsTr("Charts"), qsTr("Values"), qsTr("Overlay"), qsTr("Selected")]
+                model: [qsTr("Charts"), qsTr("Values"), qsTr("Overlay"), qsTr("Selected"), qsTr("Fuel")]
                 TabButton {
                     required property string modelData
                     required property int index
+                    // Five tabs fit a narrow phone with less padding.
+                    leftPadding: 4
+                    rightPadding: 4
                     text: modelData
                     onClicked: ObdSession.viewTab = index
                 }
@@ -164,6 +167,15 @@ Page {
                     color: "#FFCDD2"
                     text: ObdSession.statusText
                 }
+                Label {
+                    Layout.fillWidth: true
+                    visible: ObdSession.reconnecting
+                    wrapMode: Text.Wrap
+                    color: "#FFCDD2"
+                    opacity: 0.8
+                    font.pixelSize: 12
+                    text: qsTr("Reconnecting automatically in a few seconds. Go back to stop.")
+                }
                 RowLayout {
                     Button {
                         text: qsTr("Retry")
@@ -196,6 +208,7 @@ Page {
             BigValuesView {
                 onChooseRequested: pinPicker.open()
             }
+            FuelView {}
         }
     }
 

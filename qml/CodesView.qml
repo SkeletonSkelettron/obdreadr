@@ -146,8 +146,8 @@ Item {
         title: qsTr("Clear the fault codes?")
         standardButtons: Dialog.Yes | Dialog.Cancel
 
-        Label {
-            width: confirm.availableWidth
+        // As the content item, so that the wrapped text does not make a binding loop.
+        contentItem: Label {
             wrapMode: Text.Wrap
             text: qsTr("This turns the check engine light off and erases the stored codes and their freeze frame data. The readiness monitors reset too, so the car needs some driving before an emissions inspection. If the fault is still there, the code comes back.\n\nSwitch the engine off and leave the ignition on.")
         }

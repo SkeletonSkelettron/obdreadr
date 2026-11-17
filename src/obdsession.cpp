@@ -1,5 +1,6 @@
 #include "obdsession.h"
 
+#include "background.h"
 #include "obd/elmparser.h"
 #include "health.h"
 #include "obd/dtc.h"
@@ -12,6 +13,7 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
+#include <QGuiApplication>
 #include <QLocale>
 #include <QSettings>
 
@@ -38,6 +40,9 @@ constexpr int kConnectTimeoutMs = 20000;
 constexpr int kMissesBeforeUnavailable = 6;  // NO DATA answers in a row for one sensor
 constexpr int kFailuresBeforeLost = 12;      // failed answers in a row for all sensors
 constexpr int kMaxLogLines = 500;
+constexpr int kReconnectDelayMs = 15000;        // between automatic reconnects
+constexpr qint64 kReconnectForMs = 15 * 60000;  // since the car last answered
+constexpr int kServiceRefreshMs = 5000;
 
 const char kVoltageKey[] = "ATRV";
 
@@ -60,6 +65,7 @@ bool looksLikeObd(const QString &name)
 
 ObdSession::ObdSession(QObject *parent)
     : QObject(parent)
+    , m_fuel(new FuelMeter(&m_clock, this))
     , m_sensors(new SensorModel(this))
     , m_activeSensors(new SensorFilterModel(SensorModel::ActiveRole, this))
     , m_pinnedSensors(new SensorFilterModel(SensorModel::PinnedRole, this))
@@ -72,7 +78,32 @@ ObdSession::ObdSession(QObject *parent)
     m_windowSeconds = settings.value(QStringLiteral("view/window"), 60).toInt();
     m_viewTab = settings.value(QStringLiteral("view/tab"), 0).toInt();
     m_recordAll = settings.value(QStringLiteral("record/all"), true).toBool();
+    m_background = settings.value(QStringLiteral("background/enabled"), true).toBool();
     refreshRecordings();
+
+    connect(m_fuel, &FuelMeter::inputsChanged, this, [this] {
+        const QList<int> inputs = m_fuel->inputs();
+        m_fuelPids = QSet<int>(inputs.begin(), inputs.end());
+        if (m_state == Running)
+            pollNext();
+    });
+
+    m_serviceTimer.setInterval(kServiceRefreshMs);
+    connect(&m_serviceTimer, &QTimer::timeout, this, &ObdSession::updateService);
+    connect(this, &ObdSession::stateChanged, this, &ObdSession::updateService);
+    m_reconnectTimer.setSingleShot(true);
+    connect(&m_reconnectTimer, &QTimer::timeout, this, [this] {
+        if (m_lastFactory)
+            startTransport(m_lastName, m_lastFactory, false);
+    });
+    if (qGuiApp) {
+        connect(qGuiApp, &QGuiApplication::applicationStateChanged, this, [this](Qt::ApplicationState state) {
+            if (state == Qt::ApplicationActive)
+                emit backgroundChanged(); // the battery setting may have changed meanwhile
+            else
+                m_fuel->save();
+        });
+    }
 
     connect(&m_elm, &Elm327::logLine, this, &ObdSession::appendLog);
     connect(m_sensors, &SensorModel::selectionChanged, this, [this] {
@@ -106,7 +137,9 @@ ObdSession::ObdSession(QObject *parent)
 
 ObdSession::~ObdSession()
 {
+    m_reconnectTimer.stop();
     teardown();
+    stopService();
 }
 
 QString ObdSession::stateText() const
@@ -117,7 +150,7 @@ QString ObdSession::stateText() const
     case Initializing: return tr("Initializing adapter…");
     case Discovering: return tr("Discovering sensors…");
     case Running: return m_paused ? tr("Paused") : tr("Live");
-    case Failed: return tr("Error");
+    case Failed: return reconnecting() ? tr("Reconnecting…") : tr("Error");
     }
     return {};
 }
@@ -261,20 +294,29 @@ void ObdSession::connectBluetooth(const QString &address, const QString &name, b
 void ObdSession::reconnect()
 {
     if (m_lastFactory)
-        startTransport(m_lastName, m_lastFactory);
+        startTransport(m_lastName, m_lastFactory, false);
 }
 
 void ObdSession::disconnectAdapter()
 {
+    m_reconnectTimer.stop();
     teardown();
     setState(Disconnected);
     setStatus(QString());
+    stopService();
 }
 
-void ObdSession::startTransport(const QString &name, TransportFactory factory)
+void ObdSession::startTransport(const QString &name, TransportFactory factory, bool newDrive)
 {
+    m_reconnectTimer.stop();
     teardown();
     const quint64 generation = m_generation;
+    // A reconnect carries on with the drive (and the time since the car last
+    // answered, which limits automatic reconnecting).
+    if (newDrive) {
+        m_newDrive = true;
+        m_sinceData.invalidate();
+    }
 
     m_lastName = name;
     m_lastFactory = factory;
@@ -309,9 +351,10 @@ void ObdSession::startTransport(const QString &name, TransportFactory factory)
     });
     m_elm.setTransport(m_transport);
 
-    appendLog(tr("Connecting to %1").arg(name));
+    appendLog(newDrive ? tr("Connecting to %1").arg(name) : tr("Reconnecting to %1").arg(name));
     setStatus(tr("Connecting to %1…").arg(name));
     setState(Connecting);
+    startService();
     m_connectTimeout.start(kConnectTimeoutMs);
     m_transport->open();
 }
@@ -325,6 +368,7 @@ void ObdSession::teardown()
     m_polling = false;
     m_elm.setTransport(nullptr);
     stopRecording();
+    m_fuel->endSession();
     m_healthTimer.stop();
     if (m_testsBusy) {
         m_testsBusy = false;
@@ -351,7 +395,10 @@ void ObdSession::fail(const QString &message)
     teardown();
     appendLog(QStringLiteral("! ") + message);
     setStatus(message);
+    scheduleReconnect();
     setState(Failed);
+    if (!reconnecting())
+        stopService();
 }
 
 void ObdSession::setState(State state)
@@ -529,6 +576,7 @@ void ObdSession::finishDiscovery()
     for (int row = 0; row < m_sensors->size(); ++row)
         m_seriesByPid.insert(m_sensors->entry(row).pid, m_sensors->entry(row).series);
     emit sensorCountChanged();
+    m_fuel->startSession(availablePids(), std::exchange(m_newDrive, false));
     appendLog(tr("Sensors: %1").arg(charted.join(QLatin1Char(' '))));
     if (!other.isEmpty())
         appendLog(tr("Supported but not charted (status PIDs): %1").arg(other.join(QLatin1Char(' '))));
@@ -567,12 +615,24 @@ int ObdSession::pollIntervalMs(const SensorModel::Entry &e) const
     // Sensors on screen as often as the adapter allows (fast ones) or every
     // second or two; the rest, recorded in the background, less often.
     const obd::Pace pace = e.pid < 0 ? obd::Pace::Medium : obd::pace(quint8(e.pid));
+    const bool shown = e.shown() || (m_fuel->onScreen() && m_fuelPids.contains(e.pid));
     switch (pace) {
-    case obd::Pace::Fast: return e.shown() ? 100 : 1000;
-    case obd::Pace::Medium: return e.shown() ? 1000 : 2000;
-    case obd::Pace::Slow: return e.shown() ? 2000 : 5000;
+    case obd::Pace::Fast: return shown ? 100 : 1000;
+    case obd::Pace::Medium: return shown ? 1000 : 2000;
+    case obd::Pace::Slow: return shown ? 2000 : 5000;
     }
     return 1000;
+}
+
+QSet<int> ObdSession::availablePids() const
+{
+    QSet<int> pids;
+    for (int row = 0; row < m_sensors->size(); ++row) {
+        const SensorModel::Entry &e = m_sensors->entry(row);
+        if (e.available && e.pid >= 0)
+            pids.insert(e.pid);
+    }
+    return pids;
 }
 
 void ObdSession::pollNext()
@@ -587,7 +647,9 @@ void ObdSession::pollNext()
     qint64 nextDueMs = 500;
     for (int row = 0; row < m_sensors->size(); ++row) {
         const SensorModel::Entry &e = m_sensors->entry(row);
-        if (!e.available || !(e.shown() || m_recordAll))
+        // The fuel meter's sensors are read whenever connected, so that it
+        // keeps counting with the screen off or another tab open.
+        if (!e.available || !(e.shown() || m_recordAll || m_fuelPids.contains(e.pid)))
             continue;
         const int interval = pollIntervalMs(e);
         const qint64 waited = nowMs - e.lastPollMs;
@@ -636,6 +698,8 @@ void ObdSession::handlePollReply(int row, const Elm327::Reply &reply)
         const double t = m_clock.elapsed() / 1000.0;
         e.series->append(t, *value);
         m_recorder.record(row, t, *value);
+        m_fuel->addSample(e.pid, t, *value);
+        m_sinceData.start();
         e.misses = 0;
         m_failStreak = 0;
         ++m_samples;
@@ -648,6 +712,7 @@ void ObdSession::handlePollReply(int row, const Elm327::Reply &reply)
     if (sensorProblem && e.pid >= 0 && ++e.misses >= kMissesBeforeUnavailable) {
         appendLog(tr("%1: no data, removed from the dashboard").arg(e.series->name()));
         m_sensors->setAvailable(row, false);
+        m_fuel->setAvailablePids(availablePids());
     }
 
     if (++m_failStreak >= kFailuresBeforeLost) {
@@ -1140,3 +1205,99 @@ void ObdSession::onDeviceDiscovered(const QBluetoothDeviceInfo &info)
     emit devicesChanged();
 }
 #endif
+
+// --- Background ------------------------------------------------------------------
+
+bool ObdSession::backgroundSupported() const
+{
+    return background::supported();
+}
+
+bool ObdSession::keepRunning() const
+{
+    return m_background && background::supported();
+}
+
+void ObdSession::setBackground(bool on)
+{
+    if (m_background == on)
+        return;
+    m_background = on;
+    QSettings().setValue(QStringLiteral("background/enabled"), on);
+    emit backgroundChanged();
+    if (on) {
+        if (m_state != Disconnected && m_state != Failed)
+            startService();
+    } else {
+        m_reconnectTimer.stop();
+        stopService();
+        emit stateChanged(); // no longer reconnecting
+    }
+}
+
+bool ObdSession::batteryRestricted() const
+{
+    return background::batteryRestricted();
+}
+
+void ObdSession::allowBackground()
+{
+    background::requestUnrestricted();
+}
+
+void ObdSession::startService()
+{
+    if (!keepRunning())
+        return;
+    if (m_serviceOn) {
+        // Android does not let an app start a service from the background,
+        // as after an automatic reconnect; the running one just gets news.
+        updateService();
+        return;
+    }
+    m_serviceOn = true;
+    m_serviceText = m_statusText;
+    background::start(tr("OBD Reader · %1").arg(m_connectionName), m_serviceText);
+    m_serviceTimer.start();
+}
+
+void ObdSession::updateService()
+{
+    if (!m_serviceOn)
+        return;
+    QString text;
+    switch (m_state) {
+    case Running:
+        text = m_paused ? tr("Paused") : m_fuel->summary().join(QLatin1Char('\n'));
+        break;
+    case Failed:
+        text = reconnecting() ? tr("Connection lost, reconnecting…") : m_statusText;
+        break;
+    default:
+        text = m_statusText;
+        break;
+    }
+    if (text == m_serviceText)
+        return;
+    m_serviceText = text;
+    background::update(tr("OBD Reader · %1").arg(m_connectionName), text);
+}
+
+void ObdSession::stopService()
+{
+    m_serviceTimer.stop();
+    if (!m_serviceOn)
+        return;
+    m_serviceOn = false;
+    background::stop();
+}
+
+void ObdSession::scheduleReconnect()
+{
+    // Only a connection that worked is retried, and only for a while after
+    // the car last answered: a parked car is left alone.
+    if (!keepRunning() || !m_lastFactory || !m_sinceData.isValid() || m_sinceData.elapsed() > kReconnectForMs)
+        return;
+    m_reconnectTimer.start(kReconnectDelayMs);
+    appendLog(tr("Reconnecting in %1 s").arg(kReconnectDelayMs / 1000));
+}

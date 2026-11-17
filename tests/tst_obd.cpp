@@ -1,6 +1,8 @@
 #include "obd/dtc.h"
 #include "obd/elmparser.h"
 #include "obd/pids.h"
+#include "fuel.h"
+#include "fuelmeter.h"
 #include "health.h"
 #include "obd/monitors.h"
 #include "obd/simecu.h"
@@ -11,6 +13,7 @@
 
 #include <QDir>
 #include <QFileInfo>
+#include <QSettings>
 #include <QTemporaryDir>
 #include <QtTest>
 
@@ -31,6 +34,16 @@ class TestObd : public QObject
     Q_OBJECT
 
 private slots:
+    void initTestCase()
+    {
+        // The fuel meter keeps its figures in QSettings; not the user's.
+        QVERIFY(m_settingsDir.isValid());
+        QSettings::setDefaultFormat(QSettings::IniFormat);
+        QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, m_settingsDir.path());
+        QCoreApplication::setOrganizationName(QStringLiteral("obdreadr-tests"));
+        QCoreApplication::setApplicationName(QStringLiteral("tst_obd"));
+    }
+
     void splitsAndCleansLines()
     {
         const QByteArray raw("010C\r\rSEARCHING...\r41 0c 1a f8 \r\r");
@@ -395,6 +408,127 @@ private slots:
                              [](const health::Check &c) { return c.title == QLatin1String("Fuel trim, bank 2"); }));
     }
 
+    void estimatesFuelFlow()
+    {
+        // 10 g/s of air at 14.7:1 is 0.68 g/s of petrol, 3.31 L/h at 740 g/L.
+        QCOMPARE(qRound(fuel::litersPerHour(10, fuel::Kind::Petrol) * 100), 331);
+        // A rich mixture burns more; a nonsense lambda is ignored.
+        QVERIFY(fuel::litersPerHour(10, fuel::Kind::Petrol, 0.85) > 3.8);
+        QCOMPARE(fuel::litersPerHour(10, fuel::Kind::Petrol, 0), fuel::litersPerHour(10, fuel::Kind::Petrol));
+        // 2.0 L at 3000 rpm, 100 kPa and 25 °C: 0.05 m³/s, 2.02 mol/s, 49.7 g/s at 85 %.
+        QCOMPARE(qRound(fuel::speedDensityAir(100, 3000, 25, 2.0) * 10), 497);
+        QCOMPARE(fuel::speedDensityAir(100, 0, 25, 2.0), 0.0);
+    }
+
+    void choosesFuelMethod()
+    {
+        using fuel::Kind;
+        using fuel::Method;
+        QCOMPARE(fuel::chooseMethod({0x0D, 0x10, 0x5E}, Kind::Petrol), Method::FuelRate);
+        QCOMPARE(fuel::chooseMethod({0x0D, 0x10, 0x0B, 0x0C}, Kind::Petrol), Method::Maf);
+        QCOMPARE(fuel::chooseMethod({0x0D, 0x0B, 0x0C}, Kind::Lpg), Method::SpeedDensity);
+        QCOMPARE(fuel::chooseMethod({0x0D, 0x10}, Kind::Diesel), Method::None);
+        QCOMPARE(fuel::chooseMethod({0x0D, 0x5E}, Kind::Diesel), Method::FuelRate);
+        QCOMPARE(fuel::chooseMethod({0x10, 0x5E}, Kind::Petrol), Method::None); // no speed
+        QCOMPARE(fuel::inputs(Method::Maf, {0x0D, 0x10, 0x0C}), (QList<int>{0x10, 0x0D}));
+        QCOMPARE(fuel::inputs(Method::SpeedDensity, {0x0B, 0x0C, 0x0D, 0x0F}), (QList<int>{0x0B, 0x0C, 0x0F, 0x0D}));
+        QCOMPARE(fuel::inputs(Method::None, {0x0D, 0x10}), QList<int>{0x0D});
+    }
+
+    void integratesWithGaps()
+    {
+        fuel::Integrator integrator(10);
+        QCOMPARE(integrator.add(0, 60).area, 0.0);
+        QCOMPARE(integrator.add(1, 80).area, 70.0);   // trapezoid
+        QCOMPARE(integrator.add(2, 80).seconds, 1.0);
+        QCOMPARE(integrator.add(30, 80).area, 0.0);   // a gap adds nothing
+        QCOMPARE(integrator.add(31, 40).area, 60.0);
+        integrator.reset();
+        QCOMPARE(integrator.add(32, 40).area, 0.0);
+    }
+
+    void measuresFuelOverATrip()
+    {
+        {
+            FuelMeter meter(nullptr);
+            meter.resetTotal();
+            meter.clearHistory();
+            meter.setCorrection(100);
+            meter.startSession({0x0D, 0x5E, 0x10}, true);
+            QCOMPARE(meter.method(), fuel::Method::FuelRate);
+            QCOMPARE(meter.inputs(), (QList<int>{0x5E, 0x0D}));
+
+            // 30 s before the measurement, then 60 s at 60 km/h burning 6 L/h.
+            for (int t = 0; t <= 90; ++t) {
+                meter.addSample(0x0D, t, 60);
+                meter.addSample(0x5E, t, 6);
+                meter.addSample(0x10, t, 99); // not the method: ignored
+                if (t == 30)
+                    meter.startTrip();
+            }
+            meter.stopTrip();
+            QCOMPARE(qRound(meter.tripTotals().km * 1000), 1000);       // 1 km
+            QCOMPARE(qRound(meter.tripTotals().liters * 1000), 100);    // 0.1 L
+            QCOMPARE(qRound(meter.tripTotals().per100km() * 10), 100);  // 10 L/100 km
+            QCOMPARE(qRound(meter.driveTotals().km * 1000), 1500);
+            QVERIFY(!meter.tripRunning());
+            QCOMPARE(meter.history().size(), 1);
+            QCOMPARE(meter.trip().value(QStringLiteral("average")).toString(), QStringLiteral("10.0"));
+
+            // Samples after the measurement count for the drive only; a long
+            // gap counts for nothing.
+            meter.addSample(0x0D, 120, 60);
+            meter.addSample(0x0D, 121, 60);
+            QCOMPARE(qRound(meter.driveTotals().km * 10000), 15167);
+            QCOMPARE(qRound(meter.tripTotals().km * 1000), 1000);
+
+            meter.setCorrection(110); // shown figures only
+            QCOMPARE(meter.trip().value(QStringLiteral("average")).toString(), QStringLiteral("11.0"));
+            meter.setCorrection(100);
+            meter.endSession();
+            QVERIFY(!meter.connected());
+            meter.addSample(0x0D, 130, 60); // not connected: ignored
+        }
+        // The total and the measurements are still there after a restart.
+        FuelMeter restarted(nullptr);
+        QCOMPARE(qRound(restarted.totalTotals().km * 10000), 15167);
+        QCOMPARE(qRound(restarted.tripTotals().liters * 1000), 100);
+        QCOMPARE(restarted.history().size(), 1);
+        restarted.startSession({0x0D, 0x5E}, false);
+        QCOMPARE(qRound(restarted.driveTotals().km), 0); // a new process starts a new drive
+    }
+
+    void estimatesFuelOnSimulatedCar()
+    {
+        // The demo car reports both its fuel rate and its air flow; the
+        // estimate from air flow should agree with the fuel rate.
+        SimEcu ecu;
+        ask(ecu, QStringLiteral("ATE0"));
+        ask(ecu, QStringLiteral("ATS0"));
+        FuelMeter byRate(nullptr);
+        FuelMeter byAir(nullptr);
+        byRate.startSession({0x0D, 0x5E}, true);
+        byAir.startSession({0x0D, 0x10}, true);
+        QCOMPARE(byAir.method(), fuel::Method::Maf);
+        for (double t = 0; t <= 600; t += 0.5) {
+            for (quint8 pid : {quint8(0x0D), quint8(0x10), quint8(0x5E)}) {
+                const auto payload = elm::mode01Payload(ask(ecu, QStringLiteral("01") + obd::hex2(pid), t), pid);
+                QVERIFY(payload);
+                const double value = *obd::decode(pid, *payload);
+                byRate.addSample(pid, t, value);
+                byAir.addSample(pid, t, value);
+            }
+        }
+        const fuel::Totals rate = byRate.driveTotals();
+        const fuel::Totals air = byAir.driveTotals();
+        QVERIFY(rate.km > 5);
+        QCOMPARE(qRound(rate.km * 1000), qRound(air.km * 1000));
+        QVERIFY2(std::abs(rate.liters - air.liters) / rate.liters < 0.01,
+                 qPrintable(QStringLiteral("%1 L vs %2 L").arg(rate.liters).arg(air.liters)));
+        const double average = rate.per100km();
+        QVERIFY2(average > 3 && average < 20, qPrintable(QString::number(average)));
+    }
+
     void simulatorEchoesUntilTurnedOff()
     {
         SimEcu ecu;
@@ -404,6 +538,9 @@ private slots:
         ecu.handle("ATE0", 0);
         QVERIFY(!ecu.handle("ATI", 0).startsWith("ATI"));
     }
+
+private:
+    QTemporaryDir m_settingsDir;
 };
 
 QTEST_GUILESS_MAIN(TestObd)
