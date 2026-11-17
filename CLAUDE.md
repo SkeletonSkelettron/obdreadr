@@ -11,8 +11,9 @@ The app's UI and the code (identifiers, comments, commit messages) are English.
 
 ## Status
 
-Released: v0.2.0 (colors, four views, fault codes, CSV recording/export) and
-v0.3.0 (Diagnostics: health checks, readiness, mode 06). Every push to
+Released: v0.2.0 (colors, four views, fault codes, CSV recording/export),
+v0.3.0 (Diagnostics: health checks, readiness, mode 06) and v0.4.0 (Fuel
+tab, background service with automatic reconnect). Every push to
 `master` also refreshes the rolling "continuous" pre-release, which the owner
 installs on the phone from
 `https://github.com/SkeletonSkelettron/obdreadr/releases/download/continuous/obdreadr-arm64-v8a.apk`.
