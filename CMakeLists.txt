@@ -67,10 +67,12 @@ set_target_properties(obdreadr PROPERTIES
     QT_ANDROID_VERSION_CODE "${OBD_VERSION_CODE}"
 )
 
-include(GNUInstallDirs)
-install(TARGETS obdreadr
-    BUNDLE DESTINATION .
-    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+if(NOT ANDROID) # on Android the app is a library packaged by the apk target
+    include(GNUInstallDirs)
+    install(TARGETS obdreadr
+        BUNDLE DESTINATION .
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+endif()
 
 # Unit tests for the protocol code (desktop only).
 if(NOT ANDROID)
