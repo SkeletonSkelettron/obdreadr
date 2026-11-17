@@ -57,6 +57,12 @@ class ObdSession : public QObject
     Q_PROPERTY(bool milOn READ milOn NOTIFY dtcChanged)
     Q_PROPERTY(QString dtcStatus READ dtcStatus NOTIFY dtcChanged)
     Q_PROPERTY(QVariantList dtcCodes READ dtcCodes NOTIFY dtcChanged)
+    Q_PROPERTY(QVariantList readiness READ readiness NOTIFY dtcChanged)
+    Q_PROPERTY(QVariantList healthChecks READ healthChecks NOTIFY healthChanged)
+    Q_PROPERTY(bool testsBusy READ testsBusy NOTIFY testsChanged)
+    Q_PROPERTY(bool testsRead READ testsRead NOTIFY testsChanged)
+    Q_PROPERTY(QString testsStatus READ testsStatus NOTIFY testsChanged)
+    Q_PROPERTY(QVariantList testResults READ testResults NOTIFY testsChanged)
     Q_PROPERTY(bool bluetoothAvailable READ bluetoothAvailable CONSTANT)
     Q_PROPERTY(bool scanning READ scanning NOTIFY scanningChanged)
     Q_PROPERTY(QVariantList devices READ devices NOTIFY devicesChanged)
@@ -102,6 +108,12 @@ public:
     bool milOn() const { return m_milOn; }
     QString dtcStatus() const { return m_dtcStatus; }
     QVariantList dtcCodes() const { return m_dtcCodes; }
+    QVariantList readiness() const { return m_readiness; }
+    QVariantList healthChecks() const { return m_healthChecks; }
+    bool testsBusy() const { return m_testsBusy; }
+    bool testsRead() const { return m_testsRead; }
+    QString testsStatus() const { return m_testsStatus; }
+    QVariantList testResults() const { return m_testResults; }
     bool bluetoothAvailable() const;
     bool scanning() const;
     QVariantList devices() const { return m_devices; }
@@ -126,6 +138,12 @@ public:
     Q_INVOKABLE void readCodes();
     Q_INVOKABLE void clearCodes();
 
+    // The car's own test results (mode 06, CAN cars): how close each
+    // monitored component is to failing, before a fault code is set.
+    Q_INVOKABLE void readTests();
+    // Re-runs the health checks on the latest sensor data.
+    Q_INVOKABLE void evaluateHealth();
+
     // Recordings: one CSV file per connection, kept in the app's storage.
     Q_INVOKABLE void refreshRecordings();
     // Copies a recording to `target` (a file or, on Android, a content:// URL
@@ -144,6 +162,8 @@ signals:
     void viewTabChanged();
     void pinnedSeriesChanged();
     void dtcChanged();
+    void healthChanged();
+    void testsChanged();
     void recordAllChanged();
     void recordingChanged();
     void recordingsChanged();
@@ -172,6 +192,9 @@ private:
     int pollIntervalMs(const SensorModel::Entry &e) const;
     void startRecording();
     void stopRecording();
+    void discoverTests(quint8 baseMid);
+    void queryTests(QList<quint8> mids);
+    void resetDiagnostics();
     bool isCurrent(quint64 generation) const { return generation == m_generation; }
 
     void withBluetoothPermission(std::function<void()> action);
@@ -186,6 +209,7 @@ private:
     QString m_connectionName;
     QString m_adapterInfo;
     QString m_protocol;
+    bool m_isCan = false;
     QString m_vin;
     SensorModel *m_sensors;
     SensorFilterModel *m_activeSensors;
@@ -225,4 +249,13 @@ private:
     QString m_dtcStatus;
     QString m_dtcNote; // shown with the next read, e.g. after clearing
     QVariantList m_dtcCodes;
+    QVariantList m_readiness;
+    QVariantList m_healthChecks;
+    QTimer m_healthTimer;
+    QHash<int, SensorSeries *> m_seriesByPid; // -1 for the adapter voltage
+    bool m_testsBusy = false;
+    bool m_testsRead = false;
+    QString m_testsStatus;
+    QVariantList m_testResults;
+    QList<quint8> m_testMids;
 };

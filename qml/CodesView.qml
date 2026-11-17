@@ -7,10 +7,8 @@ import QtQuick.Layouts
 import ObdReadr
 
 // Diagnostic trouble codes: read them, and clear them (mode 04).
-Page {
+Item {
     id: page
-
-    signal backRequested()
 
     readonly property bool running: ObdSession.state === ObdSession.Running
     readonly property var kindColors: ({ stored: "#EF9A9A", pending: "#FFE082", permanent: "#CE93D8" })
@@ -20,23 +18,6 @@ Page {
     Component.onCompleted: {
         if (page.running && !ObdSession.dtcRead)
             ObdSession.readCodes()
-    }
-
-    header: ToolBar {
-        RowLayout {
-            anchors.fill: parent
-            spacing: 0
-            ToolButton {
-                text: "‹"
-                font.pixelSize: 30
-                onClicked: page.backRequested()
-            }
-            Label {
-                Layout.fillWidth: true
-                font.bold: true
-                text: qsTr("Fault codes")
-            }
-        }
     }
 
     ListView {

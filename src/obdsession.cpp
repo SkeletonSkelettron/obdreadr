@@ -1,7 +1,9 @@
 #include "obdsession.h"
 
 #include "obd/elmparser.h"
+#include "health.h"
 #include "obd/dtc.h"
+#include "obd/monitors.h"
 #include "obd/pids.h"
 #include "sensorseries.h"
 #include "transport/simtransport.h"
@@ -90,6 +92,9 @@ ObdSession::ObdSession(QObject *parent)
 
     m_idleTimer.setSingleShot(true);
     connect(&m_idleTimer, &QTimer::timeout, this, &ObdSession::pollNext);
+
+    m_healthTimer.setInterval(2000);
+    connect(&m_healthTimer, &QTimer::timeout, this, &ObdSession::evaluateHealth);
 
     m_rateTimer.setInterval(1000);
     connect(&m_rateTimer, &QTimer::timeout, this, [this] {
@@ -285,6 +290,7 @@ void ObdSession::startTransport(const QString &name, TransportFactory factory)
     emit sensorCountChanged();
     m_log->setStringList({});
     resetCodes();
+    resetDiagnostics();
     m_clock.start();
     m_clockStart = QDateTime::currentDateTime();
 
@@ -319,6 +325,11 @@ void ObdSession::teardown()
     m_polling = false;
     m_elm.setTransport(nullptr);
     stopRecording();
+    m_healthTimer.stop();
+    if (m_testsBusy) {
+        m_testsBusy = false;
+        emit testsChanged();
+    }
     if (m_transport) {
         m_transport->disconnect(this);
         m_transport->close();
@@ -418,6 +429,7 @@ void ObdSession::onOpened()
             if (!isCurrent(generation) || r.lines.isEmpty())
                 return;
             m_protocol = elm::protocolName(r.lines.first());
+            m_isCan = elm::isCanProtocol(r.lines.first());
             emit infoChanged();
         });
         setState(Discovering);
@@ -513,6 +525,9 @@ void ObdSession::finishDiscovery()
     }
 
     m_sensors->setEntries(std::move(entries));
+    m_seriesByPid.clear();
+    for (int row = 0; row < m_sensors->size(); ++row)
+        m_seriesByPid.insert(m_sensors->entry(row).pid, m_sensors->entry(row).series);
     emit sensorCountChanged();
     appendLog(tr("Sensors: %1").arg(charted.join(QLatin1Char(' '))));
     if (!other.isEmpty())
@@ -540,6 +555,7 @@ void ObdSession::startPolling()
     m_samples = 0;
     m_rateTimer.start();
     startRecording();
+    m_healthTimer.start();
     setState(Running);
     setStatus(tr("%n sensor(s) found", nullptr, m_sensors->size() - 1));
     appendLog(tr("Polling started"));
@@ -748,6 +764,129 @@ void ObdSession::deleteRecording(const QString &path)
 
 // --- Fault codes ---------------------------------------------------------------
 
+void ObdSession::resetDiagnostics()
+{
+    m_isCan = false;
+    m_seriesByPid.clear();
+    m_readiness.clear();
+    m_healthChecks.clear();
+    m_testsBusy = false;
+    m_testsRead = false;
+    m_testsStatus.clear();
+    m_testResults.clear();
+    emit healthChanged();
+    emit testsChanged();
+}
+
+void ObdSession::evaluateHealth()
+{
+    if (m_sensors->size() == 0)
+        return;
+    const health::Lookup lookup = [this](int pid) -> const SensorSeries * { return m_seriesByPid.value(pid); };
+    m_healthChecks.clear();
+    for (const health::Check &check : health::evaluate(lookup, m_clock.elapsed() / 1000.0)) {
+        m_healthChecks << QVariantMap{
+            {QStringLiteral("title"), check.title},
+            {QStringLiteral("status"), health::statusKey(check.status)},
+            {QStringLiteral("value"), check.value},
+            {QStringLiteral("detail"), check.detail},
+        };
+    }
+    emit healthChanged();
+}
+
+void ObdSession::readTests()
+{
+    if (m_state != Running || m_testsBusy)
+        return;
+    if (!m_isCan) {
+        m_testsRead = true;
+        m_testsStatus = tr("Test results need a car on a CAN protocol (most cars from 2008 on). This car uses %1.").arg(m_protocol);
+        emit testsChanged();
+        return;
+    }
+    m_testsBusy = true;
+    m_testResults.clear();
+    m_testMids.clear();
+    m_testsStatus = tr("Asking which tests the car has…");
+    emit testsChanged();
+    discoverTests(0x00);
+}
+
+void ObdSession::discoverTests(quint8 baseMid)
+{
+    const quint64 generation = m_generation;
+    m_elm.send(QStringLiteral("06") + obd::hex2(baseMid), [this, generation, baseMid](const Elm327::Reply &reply) {
+        if (!isCurrent(generation))
+            return;
+        const auto mask = elm::supportedMask(reply.lines, baseMid, 0x06);
+        if (mask) {
+            for (quint8 mid : obd::pidsFromMask(*mask, baseMid)) {
+                if (!obd::isSupportMaskPid(mid))
+                    m_testMids << mid;
+            }
+        }
+        if (mask && (*mask & 1u) && baseMid < 0xE0) {
+            discoverTests(quint8(baseMid + 0x20));
+            return;
+        }
+        if (m_testMids.isEmpty()) {
+            m_testsBusy = false;
+            m_testsRead = true;
+            m_testsStatus = tr("The car reports no test results (%1).")
+                                .arg(reply.error.isEmpty() ? tr("no answer") : reply.error);
+            emit testsChanged();
+            return;
+        }
+        m_testsStatus = tr("Reading %n monitor(s)…", nullptr, int(m_testMids.size()));
+        emit testsChanged();
+        queryTests(m_testMids);
+    }, 5000);
+}
+
+void ObdSession::queryTests(QList<quint8> mids)
+{
+    const quint64 generation = m_generation;
+    const quint8 mid = mids.takeFirst();
+    m_elm.send(QStringLiteral("06") + obd::hex2(mid), [this, generation, mid, mids](const Elm327::Reply &reply) {
+        if (!isCurrent(generation))
+            return;
+        for (const obd::TestResult &r : obd::parseTests(reply.lines)) {
+            if (r.mid != mid)
+                continue;
+            const QLocale c = QLocale::c();
+            const auto format = [&](double v) {
+                return c.toString(v, 'f', r.decimals) + (r.unit.isEmpty() ? QString() : QStringLiteral(" ") + r.unit);
+            };
+            // Where the value sits between the limits, for a bar (0..1).
+            double position = -1;
+            if (r.hasLimits && r.max > r.min)
+                position = std::clamp((r.value - r.min) / (r.max - r.min), 0.0, 1.0);
+            m_testResults << QVariantMap{
+                {QStringLiteral("monitor"), obd::monitorName(r.mid)},
+                {QStringLiteral("test"), obd::testName(r.mid, r.tid)},
+                {QStringLiteral("value"), format(r.value)},
+                {QStringLiteral("limits"), r.hasLimits ? tr("limits %1 … %2").arg(format(r.min), format(r.max)) : QString()},
+                {QStringLiteral("status"), !r.hasLimits ? QStringLiteral("info") : r.passed ? QStringLiteral("pass") : QStringLiteral("fail")},
+                {QStringLiteral("position"), position},
+            };
+        }
+        if (!mids.isEmpty()) {
+            queryTests(mids);
+            return;
+        }
+        int failed = 0;
+        for (const QVariant &v : std::as_const(m_testResults))
+            failed += v.toMap().value(QStringLiteral("status")).toString() == QLatin1String("fail");
+        m_testsBusy = false;
+        m_testsRead = true;
+        m_testsStatus = failed > 0 ? tr("%n test(s) outside their limits", nullptr, failed)
+                                   : tr("%n test result(s), all within limits", nullptr, int(m_testResults.size()));
+        appendLog(QStringLiteral("Mode 06: ") + m_testsStatus);
+        emit testsChanged();
+    }, 4000);
+}
+
 void ObdSession::resetCodes()
 {
     m_dtcBusy = false;
@@ -780,6 +919,14 @@ void ObdSession::readCodes()
             const auto a = quint8(payload->at(0));
             m_milOn = a & 0x80;
             m_milCount = a & 0x7F;
+            m_readiness.clear();
+            for (const obd::Monitor &monitor : obd::readiness(*payload)) {
+                m_readiness << QVariantMap{
+                    {QStringLiteral("name"), monitor.name},
+                    {QStringLiteral("supported"), monitor.supported},
+                    {QStringLiteral("complete"), monitor.complete},
+                };
+            }
         }
     }, 3000);
 

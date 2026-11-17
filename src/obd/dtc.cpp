@@ -10,49 +10,6 @@ namespace dtc {
 
 namespace {
 
-struct Message {
-    QByteArray bytes;
-    int length = -1; // from the ISO-TP length line, when there is one
-};
-
-// Splits answer lines into one message per ECU answer. A multi-frame CAN
-// answer is a length line ("00A") followed by frames "0:", "1:", ...
-QList<Message> messages(const QStringList &lines)
-{
-    QList<Message> result;
-    int pendingLength = -1;
-    for (const QString &line : lines) {
-        const QString c = elm::compact(line);
-        const int colon = c.indexOf(QLatin1Char(':'));
-        if (colon > 0 && colon <= 2) {
-            const QString hex = c.mid(colon + 1);
-            if (!elm::isHex(hex))
-                continue;
-            if (c.left(colon) == QLatin1String("0") || result.isEmpty()) {
-                result << Message{{}, pendingLength};
-                pendingLength = -1;
-            }
-            result.last().bytes += QByteArray::fromHex(hex.toLatin1());
-            continue;
-        }
-        if (c.size() == 3) {
-            bool ok = false;
-            const int length = c.toInt(&ok, 16);
-            if (ok) {
-                pendingLength = length;
-                continue;
-            }
-        }
-        if (elm::isHex(c))
-            result << Message{QByteArray::fromHex(c.toLatin1()), -1};
-    }
-    for (Message &m : result) {
-        if (m.length >= 0 && m.bytes.size() > m.length)
-            m.bytes.truncate(m.length);
-    }
-    return result;
-}
-
 QHash<QString, QString> table()
 {
     QHash<QString, QString> t = {
@@ -224,10 +181,10 @@ QStringList parse(const QStringList &lines, quint8 service)
 {
     const auto reply = char(service + 0x40);
     QStringList codes;
-    for (const Message &m : messages(lines)) {
-        if (m.bytes.isEmpty() || m.bytes.at(0) != reply)
+    for (const QByteArray &message : elm::messages(lines)) {
+        if (message.isEmpty() || message.at(0) != reply)
             continue;
-        QByteArray data = m.bytes.mid(1);
+        QByteArray data = message.mid(1);
         // CAN answers start with the number of codes, which makes the data
         // length odd; the older protocols send pairs only.
         if (data.size() % 2 == 1) {

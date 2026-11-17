@@ -21,9 +21,19 @@ car through an ELM327 OBD-II adapter and draws it as scrolling charts.
 
   Pick the charted sensors in ⋮ → Charted sensors and the compared ones in
   ⋮ → Compared sensors.
-- **Fault codes** (⋮ → Fault codes): the check engine light, stored (mode 03),
-  pending (07) and permanent (0A) codes with short descriptions, and clearing
-  them (mode 04).
+- **Diagnostics** (⋮ → Diagnostics), in four tabs:
+  - **Codes**: the check engine light, stored (mode 03), pending (07) and
+    permanent (0A) fault codes with short descriptions, and clearing them (04).
+  - **Health**: checks on the live sensor data for problems that develop
+    before a fault code: fuel trims (with a vacuum leak or fuel delivery
+    pattern), charging and battery voltage, thermostat and overheating,
+    temperature sensor agreement on a cold start, idle stability, air flow and
+    load at idle, O2 sensor activity, catalyst efficiency from the sensors
+    before and after it, knock-related timing retard and intake air heat.
+    The limits are general rules of thumb.
+  - **Readiness**: which of the car's emission self-tests have completed.
+  - **Tests**: the car's own measurements (mode 06, CAN cars) against the
+    limits at which it would set a code, and misfire counts per cylinder.
 - **Recordings for a computer.** Every connection is saved as a CSV file
   (a time column, a timestamp column and one column per sensor, one row per
   reading). ⋮ → Recordings exports a file through Android's save dialog, to
@@ -98,6 +108,8 @@ your own, add the repository secrets `ANDROID_KEYSTORE_BASE64`,
 | `src/obd/pids.*` | Table of mode 01 PIDs: names, units, ranges and formulas |
 | `src/obd/elmparser.*` | Parsing ELM327 answers: errors, supported-PID masks, VIN |
 | `src/obd/dtc.*` | Fault codes: parsing modes 03/07/0A and short descriptions |
+| `src/obd/monitors.*` | Readiness monitors and mode 06 test results |
+| `src/health.*` | Health checks on the live sensor data |
 | `src/obd/simecu.*` | The simulated adapter and car used by the demo and the tests |
 | `src/transport/*` | Byte pipes to the adapter: Bluetooth, BLE, TCP, simulator |
 | `src/elm327.*` | Command queue: one command at a time, answer up to the `>` prompt |
@@ -105,7 +117,7 @@ your own, add the repository secrets `ANDROID_KEYSTORE_BASE64`,
 | `src/recorder.*` | Writing each session's readings to a CSV file |
 | `src/chartbase.*`, `src/linechart.*`, `src/overlaychart.*` | The charts, painted with `QQuickPaintedItem` |
 | `qml/` | The user interface (Qt Quick Controls, Material style) |
-| `tests/` | Unit tests of the parser, the PID formulas, fault codes, the recorder and the simulator |
+| `tests/` | Unit tests of the parser, PID formulas, fault codes, monitors, health checks, the recorder and the simulator |
 
 ## License
 

@@ -35,7 +35,7 @@ ApplicationWindow {
         DashboardPage {
             onBackRequested: window.leaveDashboard()
             onLogRequested: stack.push(logPage)
-            onCodesRequested: stack.push(codesPage)
+            onDiagnosticsRequested: stack.push(diagnosticsPage)
             onRecordingsRequested: stack.push(recordingsPage)
         }
     }
@@ -48,8 +48,8 @@ ApplicationWindow {
     }
 
     Component {
-        id: codesPage
-        CodesPage {
+        id: diagnosticsPage
+        DiagnosticsPage {
             onBackRequested: stack.pop()
         }
     }

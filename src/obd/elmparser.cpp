@@ -122,9 +122,9 @@ std::optional<QByteArray> mode01Payload(const QStringList &lines, quint8 pid)
     return std::nullopt;
 }
 
-std::optional<quint32> supportedMask(const QStringList &lines, quint8 basePid)
+std::optional<quint32> supportedMask(const QStringList &lines, quint8 basePid, quint8 service)
 {
-    const QString prefix = QStringLiteral("41") + obd::hex2(basePid);
+    const QString prefix = obd::hex2(quint8(service + 0x40)) + obd::hex2(basePid);
     std::optional<quint32> mask;
     for (const QString &line : lines) {
         const QString c = stripFrameIndex(compact(line));
@@ -136,6 +136,48 @@ std::optional<quint32> supportedMask(const QStringList &lines, quint8 basePid)
             mask = mask.value_or(0) | bits;
     }
     return mask;
+}
+
+QList<QByteArray> messages(const QStringList &lines)
+{
+    struct Message {
+        QByteArray bytes;
+        int length = -1; // from the ISO-TP length line, when there is one
+    };
+    QList<Message> found;
+    int pendingLength = -1;
+    for (const QString &line : lines) {
+        const QString c = compact(line);
+        const int colon = c.indexOf(QLatin1Char(':'));
+        if (colon > 0 && colon <= 2) {
+            const QString hex = c.mid(colon + 1);
+            if (!isHex(hex))
+                continue;
+            if (c.left(colon) == QLatin1String("0") || found.isEmpty()) {
+                found << Message{{}, pendingLength};
+                pendingLength = -1;
+            }
+            found.last().bytes += QByteArray::fromHex(hex.toLatin1());
+            continue;
+        }
+        if (c.size() == 3) {
+            bool ok = false;
+            const int length = c.toInt(&ok, 16);
+            if (ok) {
+                pendingLength = length;
+                continue;
+            }
+        }
+        if (isHex(c))
+            found << Message{QByteArray::fromHex(c.toLatin1()), -1};
+    }
+    QList<QByteArray> result;
+    for (Message &m : found) {
+        if (m.length >= 0 && m.bytes.size() > m.length)
+            m.bytes.truncate(m.length);
+        result << m.bytes;
+    }
+    return result;
 }
 
 QString parseVin(const QStringList &lines)
@@ -222,6 +264,16 @@ QString protocolName(const QString &dpn)
     if (code.size() == 1 && ok && index >= 0 && index < int(std::size(kNames)))
         return QString::fromLatin1(kNames[index]);
     return dpn;
+}
+
+bool isCanProtocol(const QString &dpn)
+{
+    QString code = compact(dpn);
+    if (code.size() == 2 && code.startsWith(QLatin1Char('A')))
+        code = code.mid(1);
+    bool ok = false;
+    const int index = code.toInt(&ok, 16);
+    return code.size() == 1 && ok && index >= 6 && index <= 0xC;
 }
 
 } // namespace elm

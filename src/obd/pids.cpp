@@ -180,8 +180,9 @@ QList<quint8> pidsFromMask(quint32 mask, quint8 basePid)
 {
     QList<quint8> pids;
     for (int bit = 0; bit < 32; ++bit) {
-        if (mask & (0x80000000u >> bit))
-            pids << quint8(basePid + 1 + bit);
+        const int pid = basePid + 1 + bit;
+        if (pid <= 0xFF && (mask & (0x80000000u >> bit)))
+            pids << quint8(pid);
     }
     return pids;
 }

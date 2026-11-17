@@ -11,7 +11,7 @@ Page {
 
     signal backRequested()
     signal logRequested()
-    signal codesRequested()
+    signal diagnosticsRequested()
     signal recordingsRequested()
 
     readonly property bool running: ObdSession.state === ObdSession.Running
@@ -90,8 +90,8 @@ Page {
                             onTriggered: pinPicker.open()
                         }
                         MenuItem {
-                            text: qsTr("Fault codes…")
-                            onTriggered: page.codesRequested()
+                            text: qsTr("Diagnostics…")
+                            onTriggered: page.diagnosticsRequested()
                         }
                         MenuItem {
                             text: qsTr("Recordings…")

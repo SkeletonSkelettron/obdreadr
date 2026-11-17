@@ -120,9 +120,14 @@ QString SimEcu::obdCommand(const QString &cmd, double t)
     case 0x03: return prefix + codesAnswer(0x03, m_stored);
     case 0x07: return prefix + codesAnswer(0x07, m_pending);
     case 0x0A: return prefix + codesAnswer(0x0A, m_permanent);
+    case 0x06:
+        if (cmd.size() >= 4)
+            return prefix + testsAnswer(quint8(cmd.mid(2, 2).toInt(nullptr, 16)));
+        break;
     case 0x04:
         // Permanent codes stay until the car itself sees the fault gone.
         m_stored.clear();
+        m_incomplete = 0x65; // clearing resets every monitor
         m_pending.clear();
         return prefix + hex(bytes({0x44}));
     default: break;
@@ -179,6 +184,55 @@ QString SimEcu::canAnswer(const QByteArray &payload) const
     return lines.join(QLatin1Char('\r'));
 }
 
+QString SimEcu::testsAnswer(quint8 mid) const
+{
+    // Monitors with test results; 00, 20, ... are the support masks.
+    static const QList<quint8> kMids = {0x01, 0x20, 0x21, 0x40, 0x60, 0x80, 0xA0, 0xA2, 0xA3, 0xA4, 0xA5};
+    if (obd::isSupportMaskPid(mid)) {
+        if (mid != 0x00 && !kMids.contains(mid))
+            return QStringLiteral("NO DATA");
+        quint32 mask = 0;
+        for (quint8 m : kMids) {
+            if (m > mid && m <= mid + 0x20)
+                mask |= 0x80000000u >> (m - mid - 1);
+        }
+        QByteArray data = bytes({0x46, mid});
+        data += char(mask >> 24);
+        data += char(mask >> 16);
+        data += char(mask >> 8);
+        data += char(mask);
+        return hex(data);
+    }
+    struct Record {
+        int tid, uasid, value, min, max;
+    };
+    QList<Record> records;
+    switch (mid) {
+    case 0x01: // O2 sensor switch times in ms
+        records = {{0x05, 0x10, 70, 0, 150}, {0x06, 0x10, 85, 0, 150}};
+        break;
+    case 0x21: // catalyst: maker-defined index, two thirds of the way to its limit
+        records = {{0x80, 0x01, 0x0150, 0x0000, 0x0200}};
+        break;
+    case 0xA4: // cylinder 3 misfires now and then, below the fault code limit
+        records = {{0x0B, 0x24, 12, 0, 0}, {0x0C, 0x24, 31, 0, 0}};
+        break;
+    case 0xA2:
+    case 0xA3:
+    case 0xA5:
+        records = {{0x0B, 0x24, 0, 0, 0}, {0x0C, 0x24, 0, 0, 0}};
+        break;
+    default:
+        return QStringLiteral("NO DATA");
+    }
+    QByteArray payload = bytes({0x46});
+    for (const Record &r : records) {
+        payload += bytes({mid, r.tid, r.uasid, r.value >> 8, r.value & 0xFF, r.min >> 8, r.min & 0xFF,
+                          r.max >> 8, r.max & 0xFF});
+    }
+    return canAnswer(payload);
+}
+
 QString SimEcu::codesAnswer(quint8 service, const QList<quint16> &codes) const
 {
     QByteArray payload = bytes({service + 0x40, int(codes.size())});
@@ -199,16 +253,19 @@ std::optional<QByteArray> SimEcu::pidData(quint8 pid, double t) const
     const double maf = rpm * load / 4000.0;
 
     switch (pid) {
-    case 0x01: return bytes({(m_stored.isEmpty() ? 0 : 0x80) | int(m_stored.size()), 0x07, 0xE5, 0x00});
+    // Spark ignition; misfire, fuel and components monitors complete;
+    // catalyst, EVAP, O2 sensor and heater supported.
+    case 0x01: return bytes({(m_stored.isEmpty() ? 0 : 0x80) | int(m_stored.size()), 0x07, 0x65, m_incomplete});
     case 0x03: return bytes({0x02, 0x00});
     case 0x04: return bytes({u8(load * 255 / 100)});
     case 0x05: return bytes({u8(coolant + 40)});
-    case 0x06: return bytes({u8((3 * std::sin(t * 1.3) + 100) * 128 / 100)});
-    case 0x07: return bytes({u8((2.3 + 100) * 128 / 100)});
+    // A small vacuum leak: leaner at idle than when driving.
+    case 0x06: return bytes({u8((3 * std::sin(t * 1.3) + (speed < 3 ? 6 : 0) + 100) * 128 / 100)});
+    case 0x07: return bytes({u8((9.4 + 100) * 128 / 100)});
     case 0x0B: return bytes({u8(30 + load * 0.7)});
     case 0x0C: return u16(rpm * 4);
     case 0x0D: return bytes({u8(speed)});
-    case 0x0E: return bytes({u8((8 + 12 * std::sin(t / 6) + 64) * 2)});
+    case 0x0E: return bytes({u8((30 - load * 0.25 + 2 * std::sin(t / 6) + 64) * 2)});
     case 0x0F: return bytes({u8(28 + 4 * std::sin(t / 40) + 40)});
     case 0x10: return u16(maf * 100);
     case 0x11: return bytes({u8(throttle * 255 / 100)});

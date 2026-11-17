@@ -34,6 +34,9 @@ private:
     QList<quint16> m_stored = {0x0133, 0x0420};
     QList<quint16> m_pending = {0x0171};
     QList<quint16> m_permanent = {0x0420};
+    // Readiness: monitors that have not completed (byte D of PID 01).
+    quint8 m_incomplete = 0x04; // the evaporative system test
+    QString testsAnswer(quint8 mid) const;
     bool m_echo = true;
     bool m_spaces = true;
     bool m_headers = false;
