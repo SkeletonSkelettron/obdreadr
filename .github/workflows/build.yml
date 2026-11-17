@@ -76,15 +76,32 @@ jobs:
 
       - name: Configure
         run: |
+          set -o pipefail
+          echo "QT_ROOT_DIR=$QT_ROOT_DIR QT_HOST_PATH=$QT_HOST_PATH ANDROID_NDK_ROOT=$ANDROID_NDK_ROOT"
           "$QT_ROOT_DIR/bin/qt-cmake" -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DQT_HOST_PATH="$QT_HOST_PATH" \
             -DANDROID_SDK_ROOT="$ANDROID_SDK_ROOT" \
             -DANDROID_NDK_ROOT="$ANDROID_NDK_ROOT" \
-            -DOBD_VERSION_CODE=${{ github.run_number }}
+            -DOBD_VERSION_CODE=${{ github.run_number }} 2>&1 | tee configure.log
 
       - name: Build APK
-        run: cmake --build build --target apk
+        run: |
+          set -o pipefail
+          cmake --build build --target apk 2>&1 | tee build.log
+
+      # Job logs need a signed-in admin; annotations are public, so put the
+      # error there too.
+      - name: Report failure
+        if: failure()
+        run: |
+          for log in configure.log build.log; do
+            [ -f "$log" ] || continue
+            text=$(grep -n -iE -B3 -A10 "error|fatal|could not|not found" "$log" | tail -n 120)
+            [ -n "$text" ] || text=$(tail -n 80 "$log")
+            text=$(printf '%s' "$text" | sed -e 's/%/%25/g' -e 's/\r/%0D/g' | sed ':a;N;$!ba;s/\n/%0A/g')
+            echo "::error title=$log::$text"
+          done
 
       - name: Sign APK
         env:
