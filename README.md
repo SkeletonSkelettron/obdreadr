@@ -84,7 +84,9 @@ car through an ELM327 OBD-II adapter and draws it as scrolling charts.
   as a notification that sounds even with the screen off.
 - **Connects by itself.** When the app starts it connects to the adapter
   used last, and the screen stays on while connected (both switchable under
-  Options on the start page).
+  Options on the start page). Android does not let an app open itself, so
+  instead pick the car's own Bluetooth (the stereo): when it connects, a
+  notification "Car connected – tap to start reading" opens the app.
 - **Demo car**, a built-in simulated ELM327, for trying the app without a car.
 - Shows the VIN, the protocol and the battery voltage, and keeps a log of the
   conversation with the adapter (⋮ → Log).

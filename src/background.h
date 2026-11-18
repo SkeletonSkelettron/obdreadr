@@ -21,6 +21,12 @@ void alert(const QString &title, const QString &text);
 // The screen's brightness for this app's window, 0..1; -1 for the user's.
 void setBrightness(double level);
 
+// The car's Bluetooth device whose connection posts "Car connected – tap to
+// start reading" (an address; empty for none), and the paired devices to
+// pick it from, as [{name, address}].
+void setReminderDevice(const QString &address);
+QString pairedDevicesJson();
+
 // Keeps the phone's screen from turning off (the activity window's
 // FLAG_KEEP_SCREEN_ON) while `on`.
 void keepScreenOn(bool on);

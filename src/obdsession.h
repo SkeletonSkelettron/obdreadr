@@ -70,6 +70,9 @@ class ObdSession : public QObject
     Q_PROPERTY(QVariantList focusPids READ focusPids WRITE setFocusPids NOTIFY focusPidsChanged)
     Q_PROPERTY(bool accelActive READ accelActive WRITE setAccelActive NOTIFY accelChanged)
     Q_PROPERTY(QVariantMap accel READ accel NOTIFY accelChanged)
+    Q_PROPERTY(QString reminderDevice READ reminderDevice NOTIFY settingsChanged)
+    Q_PROPERTY(QString reminderDeviceName READ reminderDeviceName NOTIFY settingsChanged)
+    Q_PROPERTY(QVariantList pairedDevices READ pairedDevices NOTIFY pairedDevicesChanged)
     Q_PROPERTY(QVariantList healthChecks READ healthChecks NOTIFY healthChanged)
     Q_PROPERTY(bool testsBusy READ testsBusy NOTIFY testsChanged)
     Q_PROPERTY(bool testsRead READ testsRead NOTIFY testsChanged)
@@ -235,6 +238,16 @@ public:
     Q_INVOKABLE void resetAccel();
     Q_INVOKABLE void clearAccelBest();
 
+    // Car Bluetooth reminder (Android): when the picked device (the car's
+    // stereo) connects, a notification offers to open the app, which then
+    // connects by itself. Settings `reminder/address`, `reminder/name`.
+    QString reminderDevice() const;
+    QString reminderDeviceName() const;
+    Q_INVOKABLE void setReminderDevice(const QString &address, const QString &name);
+    QVariantList pairedDevices() const { return m_pairedDevices; }
+    // Lists the phone's paired devices (asks for the Bluetooth permission).
+    Q_INVOKABLE void loadPairedDevices();
+
     // Recordings: one CSV file per connection, kept in the app's storage.
     Q_INVOKABLE void refreshRecordings();
     // Copies a recording to `target` (a file or, on Android, a content:// URL
@@ -257,6 +270,7 @@ signals:
     void customSensorsChanged();
     void focusPidsChanged();
     void accelChanged();
+    void pairedDevicesChanged();
     void healthChanged();
     void testsChanged();
     void recordAllChanged();
@@ -339,6 +353,7 @@ private:
     accel::Timer m_accel;
     bool m_accelActive = false;
     QTimer m_accelTick; // the running time on screen
+    QVariantList m_pairedDevices;
 
     void withBluetoothPermission(std::function<void()> action);
 #ifdef OBD_HAVE_BLUETOOTH

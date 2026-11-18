@@ -13,6 +13,33 @@ Page {
     signal fuelRequested()
     signal customSensorsRequested()
 
+    Dialog {
+        id: reminderDialog
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        width: Math.min(parent.width - 32, 420) // the overlay
+        height: Math.min(parent.height - 64, implicitHeight)
+        modal: true
+        title: qsTr("The car's Bluetooth")
+        standardButtons: Dialog.Close
+
+        contentItem: ListView {
+            implicitHeight: contentHeight
+            clip: true
+            model: [{ name: qsTr("Off"), address: "" }].concat(ObdSession.pairedDevices)
+            delegate: RadioDelegate {
+                required property var modelData
+                width: ListView.view.width
+                text: modelData.address !== "" ? modelData.name + "  ·  " + modelData.address : modelData.name
+                checked: modelData.address === ObdSession.reminderDevice
+                onClicked: {
+                    ObdSession.setReminderDevice(modelData.address, modelData.name)
+                    reminderDialog.close()
+                }
+            }
+        }
+    }
+
     // Connect to the last adapter by itself, once per app start.
     // (Later, so that the stack can open the dashboard when it connects.)
     Component.onCompleted: Qt.callLater(() => ObdSession.connectOnStart())
@@ -297,6 +324,31 @@ Page {
                             editable: true
                             value: ObdSession.alertRpm
                             onValueModified: ObdSession.alertRpm = value
+                        }
+                    }
+                    Label {
+                        Layout.fillWidth: true
+                        Layout.topMargin: 6
+                        visible: ObdSession.backgroundSupported
+                        wrapMode: Text.Wrap
+                        text: ObdSession.reminderDevice !== ""
+                              ? qsTr("Reminder when %1 connects").arg(ObdSession.reminderDeviceName || ObdSession.reminderDevice)
+                              : qsTr("Reminder when the car's Bluetooth connects: off")
+                    }
+                    Label {
+                        Layout.fillWidth: true
+                        visible: ObdSession.backgroundSupported
+                        wrapMode: Text.Wrap
+                        opacity: 0.7
+                        font.pixelSize: 12
+                        text: qsTr("Android does not let an app open itself. Pick the car's own Bluetooth (the stereo, not the OBD adapter): when it connects, a notification opens this app, which then connects by itself.")
+                    }
+                    Button {
+                        visible: ObdSession.backgroundSupported
+                        text: qsTr("Choose the car's Bluetooth…")
+                        onClicked: {
+                            ObdSession.loadPairedDevices()
+                            reminderDialog.open()
                         }
                     }
                     Button {

@@ -12,6 +12,9 @@
 
 #include <QCoreApplication>
 #include <QDir>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QLocale>
@@ -90,6 +93,7 @@ ObdSession::ObdSession(QObject *parent)
     m_alertsEnabled = settings.value(QStringLiteral("alerts/enabled"), true).toBool();
     m_alertRpm = settings.value(QStringLiteral("alerts/rpm"), 0).toInt();
     m_alerts.setRpmLimit(m_alertRpm);
+    background::setReminderDevice(reminderDevice()); // the Java side keeps its own copy
     refreshRecordings();
 
     connect(m_fuel, &FuelMeter::inputsChanged, this, [this] {
@@ -430,6 +434,36 @@ void ObdSession::removeCustomSensor(int index)
     sensors.removeAt(index);
     custom::save(sensors);
     emit customSensorsChanged();
+}
+
+QString ObdSession::reminderDevice() const
+{
+    return QSettings().value(QStringLiteral("reminder/address")).toString();
+}
+
+QString ObdSession::reminderDeviceName() const
+{
+    return QSettings().value(QStringLiteral("reminder/name")).toString();
+}
+
+void ObdSession::setReminderDevice(const QString &address, const QString &name)
+{
+    QSettings settings;
+    settings.setValue(QStringLiteral("reminder/address"), address);
+    settings.setValue(QStringLiteral("reminder/name"), address.isEmpty() ? QString() : name);
+    background::setReminderDevice(address);
+    emit settingsChanged();
+}
+
+void ObdSession::loadPairedDevices()
+{
+    withBluetoothPermission([this] {
+        m_pairedDevices.clear();
+        const QJsonArray devices = QJsonDocument::fromJson(background::pairedDevicesJson().toUtf8()).array();
+        for (const QJsonValue &device : devices)
+            m_pairedDevices << device.toObject().toVariantMap();
+        emit pairedDevicesChanged();
+    });
 }
 
 QVariantList ObdSession::focusPids() const

@@ -95,7 +95,7 @@ QML (qml/): Main → ConnectPage → DashboardPage (5 tabs) → DiagnosticsPage,
 | `src/fuel.*` | Fuel flow from fuel rate, MAF or speed-density; trapezoid integrator |
 | `src/fuelmeter.*` | Fuel tab's data: now, this drive, measurement, total, history; persisted |
 | `src/background.*` | JNI calls into `ObdBackground.java`; no-ops off Android |
-| `android/` | Custom manifest (Qt 6.10 template + service, permissions, background running), Java service, notification icon, debug keystore |
+| `android/` | Custom manifest (Qt 6.10 template + service, receiver, permissions, background running), Java service and helpers, notification icon, debug keystore |
 | `src/chartbase.*`, `linechart.*`, `overlaychart.*` | `QQuickPaintedItem` charts |
 | `tests/tst_obd.cpp` | QtTest unit tests of all the pure logic |
 
@@ -159,6 +159,12 @@ Things worth knowing before changing them:
   `readFreezeFrame`: the mask (`020000`, `022000`, ...), the code (`020200`)
   and then each supported PID of the table, parsed by `elm::mode02Payload`
   into `freezeFrame` {code, values}; CodesView shows it under that code.
+- **Car Bluetooth reminder.** `CarBluetoothReceiver` (manifest receiver for
+  `ACL_CONNECTED`) compares the device with the address in the app's
+  SharedPreferences (`ObdBackground.setReminderDevice`, mirrored from
+  `reminder/address` at every start) and posts "Car connected" opening the
+  app, unless `ObdService` runs. `loadPairedDevices()` lists bonded devices
+  through `ObdBackground.bondedDevices` (JSON).
 - **Focus PIDs, timer and HUD.** Pages set `focusPids`; those are polled as
   if on screen, also with "Record all sensors" off. `recordValue` feeds speed
   to `accel::Timer` (`src/accel.*`) while `accelActive` (the timer page);
@@ -190,6 +196,7 @@ Things worth knowing before changing them:
   channel). The monitor is reset only on a connection the user starts.
 - Settings (QSettings): `wifi/*`, `bt/*`, `connect/auto`, `connect/last`,
   `alerts/enabled`, `alerts/rpm`, `custom/sensors`, `accel/best100`,
+  `reminder/address`, `reminder/name`,
   `sensors/active`, `sensors/pinned`, `view/window`, `view/tab`,
   `view/keepScreenOn`, `record/all`, `background/enabled`, `fuel/type`,
   `fuel/engineLiters`, `fuel/correction`, `fuel/price`, `fuel/total/*`,

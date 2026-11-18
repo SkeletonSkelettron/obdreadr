@@ -58,6 +58,26 @@ void alert(const QString &title, const QString &text)
     notify("alert", title, text);
 }
 
+void setReminderDevice(const QString &address)
+{
+    const QJniObject ctx = context();
+    if (!ctx.isValid())
+        return;
+    const QJniObject jAddress = QJniObject::fromString(address);
+    QJniObject::callStaticMethod<void>(kClass, "setReminderDevice", "(Landroid/content/Context;Ljava/lang/String;)V",
+                                       ctx.object(), jAddress.object<jstring>());
+}
+
+QString pairedDevicesJson()
+{
+    const QJniObject ctx = context();
+    if (!ctx.isValid())
+        return QStringLiteral("[]");
+    return QJniObject::callStaticObjectMethod(kClass, "bondedDevices", "(Landroid/content/Context;)Ljava/lang/String;",
+                                              ctx.object())
+        .toString();
+}
+
 void setBrightness(double level)
 {
     const QJniObject ctx = context();
@@ -100,6 +120,8 @@ void start(const QString &, const QString &) {}
 void update(const QString &, const QString &) {}
 void stop() {}
 void alert(const QString &, const QString &) {}
+void setReminderDevice(const QString &) {}
+QString pairedDevicesJson() { return QStringLiteral("[]"); }
 void setBrightness(double) {}
 void keepScreenOn(bool) {}
 bool batteryRestricted() { return false; }

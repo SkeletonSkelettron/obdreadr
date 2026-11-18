@@ -6,6 +6,10 @@ import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
+import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothManager;
+import android.content.SharedPreferences;
 import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
@@ -17,11 +21,19 @@ import android.provider.Settings;
 import android.util.Log;
 import android.view.WindowManager;
 
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
 // Called from C++ (src/background.cpp) through JNI.
 public final class ObdBackground {
     private static final int NOTIFICATION_PERMISSION_REQUEST = 7401;
     private static final String ALERT_CHANNEL_ID = "alerts";
     private static final int ALERT_ID_BASE = 100;
+    private static final String REMINDER_CHANNEL_ID = "reminder";
+    private static final int REMINDER_ID = 50;
+    private static final String PREFS = "obdreadr";
+    private static final String PREF_REMINDER = "reminderDevice";
 
     private ObdBackground() {}
 
@@ -94,6 +106,69 @@ public final class ObdBackground {
             params.screenBrightness = level;
             activity.getWindow().setAttributes(params);
         });
+    }
+
+    // The car's Bluetooth device that triggers the reminder (an address, or
+    // empty for none), kept where CarBluetoothReceiver can read it without Qt.
+    public static void setReminderDevice(Context context, String address) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+                .putString(PREF_REMINDER, address != null ? address : "").apply();
+    }
+
+    static String reminderDevice(Context context) {
+        return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(PREF_REMINDER, "");
+    }
+
+    // The phone's paired Bluetooth devices as JSON: [{"name": ..., "address": ...}].
+    public static String bondedDevices(Context context) {
+        JSONArray list = new JSONArray();
+        try {
+            BluetoothManager manager = context.getSystemService(BluetoothManager.class);
+            BluetoothAdapter adapter = manager != null ? manager.getAdapter() : null;
+            if (adapter != null) {
+                for (BluetoothDevice device : adapter.getBondedDevices()) {
+                    JSONObject item = new JSONObject();
+                    String name = device.getName();
+                    item.put("name", name != null ? name : "");
+                    item.put("address", device.getAddress());
+                    list.put(item);
+                }
+            }
+        } catch (SecurityException | JSONException e) {
+            Log.w(ObdService.TAG, "Cannot list the paired devices", e);
+        }
+        return list.toString();
+    }
+
+    // "Car connected - tap to start reading", opening the app.
+    static void remind(Context context) {
+        NotificationManager manager = context.getSystemService(NotificationManager.class);
+        if (manager == null)
+            return;
+        if (manager.getNotificationChannel(REMINDER_CHANNEL_ID) == null) {
+            NotificationChannel channel = new NotificationChannel(
+                    REMINDER_CHANNEL_ID, "Car connected", NotificationManager.IMPORTANCE_HIGH);
+            channel.setDescription("When the car's Bluetooth connects, a tap starts reading the car");
+            manager.createNotificationChannel(channel);
+        }
+        Intent open = context.getPackageManager().getLaunchIntentForPackage(context.getPackageName());
+        if (open == null)
+            return;
+        open.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        PendingIntent tap = PendingIntent.getActivity(context, 2, open,
+                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+        int icon = context.getResources().getIdentifier("ic_stat_obd", "drawable", context.getPackageName());
+        if (icon == 0)
+            icon = android.R.drawable.stat_sys_data_bluetooth;
+        Notification notification = new Notification.Builder(context, REMINDER_CHANNEL_ID)
+                .setSmallIcon(icon)
+                .setContentTitle("Car connected")
+                .setContentText("Tap to start reading the car")
+                .setContentIntent(tap)
+                .setAutoCancel(true)
+                .setTimeoutAfter(10 * 60 * 1000)
+                .build();
+        manager.notify(REMINDER_ID, notification);
     }
 
     public static void keepScreenOn(Context context, final boolean on) {

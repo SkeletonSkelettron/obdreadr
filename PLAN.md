@@ -140,7 +140,11 @@ picture top to bottom, for a phone lying with its top toward the windscreen.
   (for the windscreen reflection), full brightness while open
   (`ObdBackground.setBrightness`, window attribute screenBrightness).
 
-## 9. Car Bluetooth reminder (instead of a fully automatic start)
+## 9. Car Bluetooth reminder (instead of a fully automatic start) — done
+
+The reminder is skipped while the service runs (already connected). The
+picker is on the start page (Options) until Settings (10) exists. Java is
+only compiled by CI.
 
 Android does not let an app open itself from the background, and an ELM327
 does not announce itself when it powers up, so a tap stays necessary:

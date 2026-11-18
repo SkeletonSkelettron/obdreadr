@@ -63,6 +63,17 @@
             android:stopWithTask="true"
             android:exported="false" />
 
+        <!-- "Car connected - tap to start reading": the car's Bluetooth
+             connecting (an exception to Android 8's limits on manifest
+             receivers). -->
+        <receiver
+            android:name="io.github.skeletonskelettron.obdreadr.CarBluetoothReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.bluetooth.device.action.ACL_CONNECTED" />
+            </intent-filter>
+        </receiver>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.qtprovider"
