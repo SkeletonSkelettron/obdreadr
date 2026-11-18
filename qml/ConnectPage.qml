@@ -13,7 +13,8 @@ Page {
     signal fuelRequested()
 
     // Connect to the last adapter by itself, once per app start.
-    Component.onCompleted: ObdSession.connectOnStart()
+    // (Later, so that the stack can open the dashboard when it connects.)
+    Component.onCompleted: Qt.callLater(() => ObdSession.connectOnStart())
 
     header: ToolBar {
         Label {
@@ -265,6 +266,37 @@ Page {
                         text: qsTr("Keep the screen on while connected")
                         checked: ObdSession.keepScreenOn
                         onToggled: ObdSession.keepScreenOn = checked
+                    }
+                    Switch {
+                        Layout.fillWidth: true
+                        text: qsTr("Alerts while driving")
+                        checked: ObdSession.alertsEnabled
+                        onToggled: ObdSession.alertsEnabled = checked
+                    }
+                    Label {
+                        Layout.fillWidth: true
+                        visible: ObdSession.alertsEnabled
+                        wrapMode: Text.Wrap
+                        opacity: 0.7
+                        font.pixelSize: 12
+                        text: qsTr("Overheating (108 °C), a battery that stops charging or overcharges, the check engine light, low fuel and, if set, an engine speed limit.")
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        visible: ObdSession.alertsEnabled
+                        Label {
+                            Layout.fillWidth: true
+                            wrapMode: Text.Wrap
+                            text: ObdSession.alertRpm > 0 ? qsTr("Engine speed alert") : qsTr("Engine speed alert: off")
+                        }
+                        SpinBox {
+                            from: 0
+                            to: 9000
+                            stepSize: 250
+                            editable: true
+                            value: ObdSession.alertRpm
+                            onValueModified: ObdSession.alertRpm = value
+                        }
                     }
                 }
             }

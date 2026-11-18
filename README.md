@@ -58,6 +58,10 @@ car through an ELM327 OBD-II adapter and draws it as scrolling charts.
   answered, and the measurement and the total carry on. Leaving the dashboard
   disconnects. Some phones also need battery optimization off for the app
   (Fuel tab → Allow running in the background).
+- **Alerts while driving**: an overheating engine (108 °C), a battery that
+  stops charging or overcharges, the check engine light coming on, low fuel
+  and an optional engine speed limit. They show over the app and, on Android,
+  as a notification that sounds even with the screen off.
 - **Connects by itself.** When the app starts it connects to the adapter
   used last, and the screen stays on while connected (both switchable under
   Options on the start page).

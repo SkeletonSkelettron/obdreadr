@@ -87,6 +87,7 @@ QML (qml/): Main → ConnectPage → DashboardPage (5 tabs) → DiagnosticsPage,
 | `src/sensormodel.*`, `src/sensorseries.*` | Sensors, their samples and colors |
 | `src/recorder.*` | CSV writer, keeps the newest 50 files in AppDataLocation/recordings |
 | `src/health.*` | Health checks on live data |
+| `src/alerts.*` | Alerts while driving: overheating, charging, check engine light, rpm limit, low fuel |
 | `src/fuel.*` | Fuel flow from fuel rate, MAF or speed-density; trapezoid integrator |
 | `src/fuelmeter.*` | Fuel tab's data: now, this drive, measurement, total, history; persisted |
 | `src/background.*` | JNI calls into `ObdBackground.java`; no-ops off Android |
@@ -145,7 +146,14 @@ Things worth knowing before changing them:
   `connect/last` (`bt`, `wifi` or `demo`, written by each `connect*`).
   `updateScreenOn()` sets the window's keep-screen-on flag (through
   `ObdBackground.keepScreenOn`) while connected or reconnecting.
+- **Alerts.** `recordValue` feeds every reading to `alerts::Monitor`
+  (`src/alerts.*`: thresholds, hysteresis, cooldowns), and `pollCheckEngine`
+  sends `0101` every 60 s for the check engine light. `deliver()` logs each
+  alert, emits `alertRaised` (Main.qml's banner) and calls
+  `background::alert` (Android notification on the high-importance "alerts"
+  channel). The monitor is reset only on a connection the user starts.
 - Settings (QSettings): `wifi/*`, `bt/*`, `connect/auto`, `connect/last`,
+  `alerts/enabled`, `alerts/rpm`,
   `sensors/active`, `sensors/pinned`, `view/window`, `view/tab`,
   `view/keepScreenOn`, `record/all`, `background/enabled`, `fuel/type`,
   `fuel/engineLiters`, `fuel/correction`, `fuel/total/*`, `fuel/trip/*`,

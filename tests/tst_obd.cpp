@@ -1,3 +1,4 @@
+#include "alerts.h"
 #include "obd/dtc.h"
 #include "obd/elmparser.h"
 #include "obd/pids.h"
@@ -624,6 +625,75 @@ private slots:
                  (QStringList{QStringLiteral("P0133"), QStringLiteral("P0420")}));
         QCOMPARE(obd::parseTests(askCan(QStringLiteral("06A4"), 30)).size(), 2);
         QVERIFY(elm::supportedMask(askCan(QStringLiteral("0100"), 30), 0x00));
+    }
+
+    void alertsOnOverheating()
+    {
+        alerts::Monitor monitor;
+        QVERIFY(monitor.addReading(0x05, 0, 100).isEmpty());
+        const QList<alerts::Alert> hot = monitor.addReading(0x05, 1, 108);
+        QCOMPARE(hot.size(), 1);
+        QCOMPARE(hot[0].key, QStringLiteral("coolant"));
+        QVERIFY(monitor.addReading(0x05, 2, 110).isEmpty()); // still the same episode
+        QVERIFY(monitor.addReading(0x05, 3, 104).isEmpty()); // not yet cleared
+        QVERIFY(monitor.addReading(0x05, 4, 102).isEmpty()); // cleared
+        QVERIFY(monitor.addReading(0x05, 5, 109).isEmpty()); // within the cooldown
+        QCOMPARE(monitor.addReading(0x05, 400, 109).size(), 1);
+    }
+
+    void alertsOnCharging()
+    {
+        alerts::Monitor monitor;
+        QList<alerts::Alert> raised;
+        for (int t = 0; t <= 25; ++t) {
+            raised << monitor.addReading(0x0C, t, 800);
+            raised << monitor.addReading(0x42, t, 12.5);
+        }
+        QCOMPARE(raised.size(), 1); // after 20 s, once
+        QCOMPARE(raised[0].key, QStringLiteral("charging"));
+        // The adapter's reading is ignored once the car reports its voltage.
+        QVERIFY(monitor.addReading(-1, 26, 16.0).isEmpty());
+
+        // With the engine off a low voltage is no alert.
+        alerts::Monitor parked;
+        for (int t = 0; t <= 30; ++t)
+            QVERIFY(parked.addReading(-1, t, 12.1).isEmpty());
+
+        // Overcharging after 10 s.
+        alerts::Monitor high;
+        raised.clear();
+        for (int t = 0; t <= 12; ++t)
+            raised << high.addReading(-1, t, 15.6);
+        QCOMPARE(raised.size(), 1);
+        QCOMPARE(raised[0].key, QStringLiteral("overcharging"));
+    }
+
+    void alertsOnCheckEngineRpmAndFuel()
+    {
+        alerts::Monitor monitor;
+        QVERIFY(monitor.setCheckEngine(0, false, 0).isEmpty()); // baseline
+        QCOMPARE(monitor.setCheckEngine(60, true, 1).size(), 1);
+        QVERIFY(monitor.setCheckEngine(120, true, 1).isEmpty());
+        QCOMPARE(monitor.setCheckEngine(180, true, 2).size(), 1);
+
+        // A light already on at connection is the baseline, not an alert.
+        alerts::Monitor lit;
+        QVERIFY(lit.setCheckEngine(0, true, 1).isEmpty());
+
+        monitor.setRpmLimit(4000);
+        QVERIFY(monitor.addReading(0x0C, 0, 3900).isEmpty());
+        QCOMPARE(monitor.addReading(0x0C, 1, 4100).size(), 1);
+        QVERIFY(monitor.addReading(0x0C, 2, 4200).isEmpty());
+        QVERIFY(monitor.addReading(0x0C, 3, 3700).isEmpty()); // cleared
+        QVERIFY(monitor.addReading(0x0C, 10, 4100).isEmpty()); // cooldown
+        QCOMPARE(monitor.addReading(0x0C, 40, 4100).size(), 1);
+
+        QVERIFY(monitor.addReading(0x2F, 0, 12).isEmpty());
+        QCOMPARE(monitor.addReading(0x2F, 1, 9).size(), 1);
+        QVERIFY(monitor.addReading(0x2F, 2, 8).isEmpty()); // once per connection
+        monitor.reset();
+        QCOMPARE(monitor.rpmLimit(), 4000.0); // the limit is a setting, kept
+        QCOMPARE(monitor.addReading(0x2F, 3, 9).size(), 1);
     }
 
     void simulatorEchoesUntilTurnedOff()

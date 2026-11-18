@@ -1,5 +1,6 @@
 #pragma once
 
+#include "alerts.h"
 #include "elm327.h"
 #include "fuelmeter.h"
 #include "recorder.h"
@@ -79,6 +80,8 @@ class ObdSession : public QObject
     Q_PROPERTY(bool reconnecting READ reconnecting NOTIFY stateChanged)
     Q_PROPERTY(bool autoConnect READ autoConnect WRITE setAutoConnect NOTIFY settingsChanged)
     Q_PROPERTY(bool keepScreenOn READ keepScreenOn WRITE setKeepScreenOn NOTIFY settingsChanged)
+    Q_PROPERTY(bool alertsEnabled READ alertsEnabled WRITE setAlertsEnabled NOTIFY settingsChanged)
+    Q_PROPERTY(int alertRpm READ alertRpm WRITE setAlertRpm NOTIFY settingsChanged)
 
 public:
     enum State { Disconnected, Connecting, Initializing, Discovering, Running, Failed };
@@ -155,6 +158,14 @@ public:
     // Called when the start page appears; connects once per app start.
     Q_INVOKABLE void connectOnStart();
 
+    // Alerts while driving (setting `alerts/enabled`), shown in the app and,
+    // on Android, as a notification that sounds; `alerts/rpm` is an engine
+    // speed limit, 0 for none.
+    bool alertsEnabled() const { return m_alertsEnabled; }
+    void setAlertsEnabled(bool on);
+    int alertRpm() const { return m_alertRpm; }
+    void setAlertRpm(int rpm);
+
     Q_INVOKABLE void startScan();
     Q_INVOKABLE void stopScan();
     Q_INVOKABLE void connectBluetooth(const QString &address, const QString &name, bool ble);
@@ -203,6 +214,7 @@ signals:
     void devicesChanged();
     void settingsChanged();
     void backgroundChanged();
+    void alertRaised(const QString &title, const QString &text);
 
 private:
     using TransportFactory = std::function<Transport *()>;
@@ -237,6 +249,8 @@ private:
     void stopService();
     void scheduleReconnect();
     void rememberConnection(const QString &kind);
+    void deliver(const QList<alerts::Alert> &raised);
+    void pollCheckEngine();
     void updateScreenOn();
     void startRecording();
     void stopRecording();
@@ -258,6 +272,10 @@ private:
     bool m_startConnectDone = false;
     bool m_keepScreenOn = true;
     bool m_screenKeptOn = false;
+    alerts::Monitor m_alerts;
+    bool m_alertsEnabled = true;
+    int m_alertRpm = 0;
+    QTimer m_milTimer; // polls the check engine light for alerts
 
     void withBluetoothPermission(std::function<void()> action);
 #ifdef OBD_HAVE_BLUETOOTH

@@ -47,6 +47,7 @@ constexpr int kBatchFailuresBeforeOff = 3;
 constexpr int kReconnectDelayMs = 15000;        // between automatic reconnects
 constexpr qint64 kReconnectForMs = 15 * 60000;  // since the car last answered
 constexpr int kServiceRefreshMs = 5000;
+constexpr int kMilPollMs = 60000; // check engine light, for alerts
 
 const char kVoltageKey[] = "ATRV";
 
@@ -85,6 +86,9 @@ ObdSession::ObdSession(QObject *parent)
     m_background = settings.value(QStringLiteral("background/enabled"), true).toBool();
     m_autoConnect = settings.value(QStringLiteral("connect/auto"), true).toBool();
     m_keepScreenOn = settings.value(QStringLiteral("view/keepScreenOn"), true).toBool();
+    m_alertsEnabled = settings.value(QStringLiteral("alerts/enabled"), true).toBool();
+    m_alertRpm = settings.value(QStringLiteral("alerts/rpm"), 0).toInt();
+    m_alerts.setRpmLimit(m_alertRpm);
     refreshRecordings();
 
     connect(m_fuel, &FuelMeter::inputsChanged, this, [this] {
@@ -130,6 +134,9 @@ ObdSession::ObdSession(QObject *parent)
 
     m_idleTimer.setSingleShot(true);
     connect(&m_idleTimer, &QTimer::timeout, this, &ObdSession::pollNext);
+
+    m_milTimer.setInterval(kMilPollMs);
+    connect(&m_milTimer, &QTimer::timeout, this, &ObdSession::pollCheckEngine);
 
     m_healthTimer.setInterval(2000);
     connect(&m_healthTimer, &QTimer::timeout, this, &ObdSession::evaluateHealth);
@@ -343,6 +350,51 @@ void ObdSession::setAutoConnect(bool on)
     emit settingsChanged();
 }
 
+void ObdSession::setAlertsEnabled(bool on)
+{
+    if (m_alertsEnabled == on)
+        return;
+    m_alertsEnabled = on;
+    QSettings().setValue(QStringLiteral("alerts/enabled"), on);
+    emit settingsChanged();
+}
+
+void ObdSession::setAlertRpm(int rpm)
+{
+    rpm = std::clamp(rpm, 0, 12000);
+    if (m_alertRpm == rpm)
+        return;
+    m_alertRpm = rpm;
+    m_alerts.setRpmLimit(rpm);
+    QSettings().setValue(QStringLiteral("alerts/rpm"), rpm);
+    emit settingsChanged();
+}
+
+void ObdSession::deliver(const QList<alerts::Alert> &raised)
+{
+    for (const alerts::Alert &alert : raised) {
+        appendLog(QStringLiteral("! %1: %2").arg(alert.title, alert.text));
+        emit alertRaised(alert.title, alert.text);
+        background::alert(alert.title, alert.text);
+    }
+}
+
+void ObdSession::pollCheckEngine()
+{
+    if (m_state != Running || !m_alertsEnabled)
+        return;
+    const quint64 generation = m_generation;
+    m_elm.send(QStringLiteral("0101"), [this, generation](const Elm327::Reply &reply) {
+        if (!isCurrent(generation))
+            return;
+        const auto payload = elm::mode01Payload(reply.lines, 0x01);
+        if (!payload || payload->isEmpty())
+            return;
+        const auto a = quint8(payload->at(0));
+        deliver(m_alerts.setCheckEngine(m_clock.elapsed() / 1000.0, a & 0x80, a & 0x7F));
+    }, 3000);
+}
+
 void ObdSession::setKeepScreenOn(bool on)
 {
     if (m_keepScreenOn == on)
@@ -389,6 +441,7 @@ void ObdSession::startTransport(const QString &name, TransportFactory factory, b
     if (newDrive) {
         m_newDrive = true;
         m_sinceData.invalidate();
+        m_alerts.reset();
     }
 
     m_lastName = name;
@@ -445,6 +498,7 @@ void ObdSession::teardown()
     stopRecording();
     m_fuel->endSession();
     m_healthTimer.stop();
+    m_milTimer.stop();
     if (m_testsBusy) {
         m_testsBusy = false;
         emit testsChanged();
@@ -690,10 +744,12 @@ void ObdSession::startPolling()
     m_rateTimer.start();
     startRecording();
     m_healthTimer.start();
+    m_milTimer.start();
     setState(Running);
     setStatus(tr("%n sensor(s) found", nullptr, m_sensors->size() - 1));
     appendLog(m_batching ? tr("Polling started, up to %1 sensors per request").arg(kMaxBatch) : tr("Polling started"));
     pollNext();
+    pollCheckEngine(); // the baseline for check engine alerts
 }
 
 int ObdSession::pollIntervalMs(const SensorModel::Entry &e) const
@@ -888,6 +944,8 @@ void ObdSession::recordValue(int row, double t, double value)
     e.series->append(t, value);
     m_recorder.record(row, t, value);
     m_fuel->addSample(e.pid, t, value);
+    if (m_alertsEnabled)
+        deliver(m_alerts.addReading(e.pid, t, value));
     m_sinceData.start();
     e.misses = 0;
     m_failStreak = 0;

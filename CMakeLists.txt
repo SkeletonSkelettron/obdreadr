@@ -33,6 +33,7 @@ qt_add_executable(obdreadr
     src/obdsession.h src/obdsession.cpp
     src/recorder.h src/recorder.cpp
     src/health.h src/health.cpp
+    src/alerts.h src/alerts.cpp
     src/fuel.h src/fuel.cpp
     src/fuelmeter.h src/fuelmeter.cpp
     src/background.h src/background.cpp
@@ -113,6 +114,7 @@ if(NOT ANDROID)
             src/recorder.cpp
             src/sensorseries.cpp
             src/health.cpp
+            src/alerts.cpp
             src/fuel.cpp
             src/fuelmeter.h src/fuelmeter.cpp)
         target_include_directories(tst_obd PRIVATE src)

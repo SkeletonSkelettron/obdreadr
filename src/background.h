@@ -14,6 +14,10 @@ void start(const QString &title, const QString &text);
 void update(const QString &title, const QString &text);
 void stop();
 
+// A notification that sounds and shows over other apps, for alerts while
+// driving (its own high-importance channel).
+void alert(const QString &title, const QString &text);
+
 // Keeps the phone's screen from turning off (the activity window's
 // FLAG_KEEP_SCREEN_ON) while `on`.
 void keepScreenOn(bool on);

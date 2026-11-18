@@ -3,6 +3,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Controls.Material
+import QtQuick.Layouts
 import ObdReadr
 
 ApplicationWindow {
@@ -75,6 +76,62 @@ ApplicationWindow {
         function onStateChanged() {
             if (ObdSession.state === ObdSession.Connecting && stack.depth === 1)
                 stack.push(dashboardPage)
+        }
+        function onAlertRaised(title, text) {
+            alertBanner.show(title, text)
+        }
+    }
+
+    // Alerts while driving, over every page; tap to dismiss.
+    Pane {
+        id: alertBanner
+
+        property string title
+        property string text
+
+        function show(title, text) {
+            alertBanner.title = title
+            alertBanner.text = text
+            visible = true
+            hideTimer.restart()
+        }
+
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.margins: 8
+        z: 100
+        visible: false
+        padding: 14
+        Material.background: "#5c2b29"
+        Material.elevation: 8
+
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: 4
+            Label {
+                Layout.fillWidth: true
+                wrapMode: Text.Wrap
+                font.bold: true
+                font.pixelSize: 17
+                color: "#FFCDD2"
+                text: alertBanner.title
+            }
+            Label {
+                Layout.fillWidth: true
+                wrapMode: Text.Wrap
+                color: "#FFEBEE"
+                text: alertBanner.text
+            }
+        }
+
+        TapHandler {
+            onTapped: alertBanner.visible = false
+        }
+        Timer {
+            id: hideTimer
+            interval: 12000
+            onTriggered: alertBanner.visible = false
         }
     }
 

@@ -24,7 +24,9 @@ Switches on the start page (Options) until the Settings page (10) exists.
   This alone also stops the 15 s screen timeout that cut the first real
   recording into bursts.
 
-## 2. Alerts while driving
+## 2. Alerts while driving — done
+
+Switch and engine speed limit under Options on the start page for now.
 
 - Pure logic in new `src/alerts.*` (`alerts::Monitor`): fed every reading
   (pid, t, value; pid -1 = adapter voltage) and the check engine status;

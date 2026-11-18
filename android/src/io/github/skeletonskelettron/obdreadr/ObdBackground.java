@@ -2,7 +2,10 @@ package io.github.skeletonskelettron.obdreadr;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.Notification;
+import android.app.NotificationChannel;
 import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
@@ -17,6 +20,8 @@ import android.view.WindowManager;
 // Called from C++ (src/background.cpp) through JNI.
 public final class ObdBackground {
     private static final int NOTIFICATION_PERMISSION_REQUEST = 7401;
+    private static final String ALERT_CHANNEL_ID = "alerts";
+    private static final int ALERT_ID_BASE = 100;
 
     private ObdBackground() {}
 
@@ -42,6 +47,40 @@ public final class ObdBackground {
 
     public static void stop(Context context) {
         context.stopService(new Intent(context, ObdService.class));
+    }
+
+    // Alerts while driving: a channel of their own with high importance, so
+    // they sound and pop up even with the screen off or another app open.
+    public static void alert(Context context, String title, String text) {
+        NotificationManager manager = context.getSystemService(NotificationManager.class);
+        if (manager == null)
+            return;
+        if (manager.getNotificationChannel(ALERT_CHANNEL_ID) == null) {
+            NotificationChannel channel = new NotificationChannel(
+                    ALERT_CHANNEL_ID, "Alerts while driving", NotificationManager.IMPORTANCE_HIGH);
+            channel.setDescription("Overheating, charging, check engine light, engine speed and low fuel");
+            manager.createNotificationChannel(channel);
+        }
+        Intent open = context.getPackageManager().getLaunchIntentForPackage(context.getPackageName());
+        PendingIntent tap = open == null ? null
+                : PendingIntent.getActivity(context, 1, open,
+                        PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+        int icon = context.getResources().getIdentifier("ic_stat_obd", "drawable", context.getPackageName());
+        if (icon == 0)
+            icon = android.R.drawable.stat_sys_warning;
+        String body = text != null ? text : "";
+        Notification.Builder builder = new Notification.Builder(context, ALERT_CHANNEL_ID)
+                .setSmallIcon(icon)
+                .setContentTitle(title)
+                .setContentText(body)
+                .setStyle(new Notification.BigTextStyle().bigText(body))
+                .setCategory(Notification.CATEGORY_STATUS)
+                .setAutoCancel(true);
+        if (tap != null)
+            builder.setContentIntent(tap);
+        // One notification per kind of alert: a repeat replaces the old one.
+        int id = ALERT_ID_BASE + Math.abs((title != null ? title : "").hashCode() % 1000);
+        manager.notify(id, builder.build());
     }
 
     public static void keepScreenOn(Context context, final boolean on) {
