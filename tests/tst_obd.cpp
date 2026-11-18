@@ -1,5 +1,6 @@
 #include "alerts.h"
 #include "battery.h"
+#include "customsensors.h"
 #include "obd/dtc.h"
 #include "obd/elmparser.h"
 #include "obd/pids.h"
@@ -753,6 +754,56 @@ private slots:
         QVERIFY(!recording::parse("not,a,recording\n1,2,3"));
         QCOMPARE(obd::pidByName(QStringLiteral("Engine speed")), 0x0C);
         QCOMPARE(obd::pidByName(QStringLiteral("Nothing")), -2);
+    }
+
+    void readsCustomSensors()
+    {
+        // The answer to 22 11 05 (mode 22, DID 1105) carries one data byte.
+        const auto payload = elm::customPayload({QStringLiteral("62 11 05 7B")}, QStringLiteral("221105"));
+        QVERIFY(payload);
+        QCOMPARE(*payload, QByteArray::fromHex("7B"));
+        QVERIFY(!elm::customPayload({QStringLiteral("7F 22 31")}, QStringLiteral("221105")));
+        QVERIFY(!elm::customPayload({QStringLiteral("62 11 06 7B")}, QStringLiteral("221105")));
+
+        custom::Evaluator evaluator;
+        const int temp = evaluator.compile(QStringLiteral("A-40"));
+        const int rpm = evaluator.compile(QStringLiteral("(A*256+B)/4"));
+        QCOMPARE(*evaluator.evaluate(temp, *payload), 83.0);
+        QCOMPARE(*evaluator.evaluate(rpm, QByteArray::fromHex("1AF8")), 1726.0);
+        QString error;
+        QCOMPARE(evaluator.compile(QStringLiteral("A +* 2"), &error), -1);
+        QVERIFY(!error.isEmpty());
+
+        custom::Sensor sensor;
+        sensor.name = QStringLiteral("Gearbox temperature");
+        sensor.command = QStringLiteral("221105");
+        sensor.header = QStringLiteral("7E1");
+        sensor.formula = QStringLiteral("A-40");
+        sensor.max = 150;
+        QCOMPARE(custom::validate(sensor), QString());
+        sensor.command = QStringLiteral("22110");
+        QVERIFY(!custom::validate(sensor).isEmpty());
+        sensor.command = QStringLiteral("221105");
+        sensor.header = QStringLiteral("7E");
+        QVERIFY(!custom::validate(sensor).isEmpty());
+        QCOMPARE(custom::Sensor::fromMap(sensor.toMap()).command, QStringLiteral("221105"));
+
+        // The demo car's transmission answers it, also with headers on.
+        SimEcu ecu;
+        ask(ecu, QStringLiteral("ATE0"));
+        ask(ecu, QStringLiteral("ATS0"));
+        ask(ecu, QStringLiteral("ATSH7E1"));
+        const auto answer = elm::customPayload(ask(ecu, QStringLiteral("221105")), QStringLiteral("221105"));
+        QVERIFY(answer);
+        QCOMPARE(*evaluator.evaluate(temp, *answer), 83.0);
+        ask(ecu, QStringLiteral("ATSH7E0"));
+        QCOMPARE(elm::errorIn(ask(ecu, QStringLiteral("221105"))), QStringLiteral("NO DATA"));
+        ask(ecu, QStringLiteral("ATSH7DF"));
+        ask(ecu, QStringLiteral("ATH1"));
+        const auto withHeaders = elm::customPayload(elm::stripCanHeaders(ask(ecu, QStringLiteral("221105")), 3),
+                                                    QStringLiteral("221105"));
+        QVERIFY(withHeaders);
+        QCOMPARE(*withHeaders, QByteArray::fromHex("7B"));
     }
 
     void testsTheBattery()

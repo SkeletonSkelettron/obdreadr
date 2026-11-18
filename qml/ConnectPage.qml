@@ -11,6 +11,7 @@ Page {
 
     signal recordingsRequested()
     signal fuelRequested()
+    signal customSensorsRequested()
 
     // Connect to the last adapter by itself, once per app start.
     // (Later, so that the stack can open the dashboard when it connects.)
@@ -297,6 +298,11 @@ Page {
                             value: ObdSession.alertRpm
                             onValueModified: ObdSession.alertRpm = value
                         }
+                    }
+                    Button {
+                        Layout.topMargin: 6
+                        text: qsTr("Custom sensors…")
+                        onClicked: page.customSensorsRequested()
                     }
                 }
             }

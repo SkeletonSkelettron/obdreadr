@@ -55,4 +55,5 @@ private:
     bool m_spaces = true;
     bool m_headers = false;
     bool m_searched = false;
+    QString m_header; // AT SH: the ECU addressed, empty for all
 };

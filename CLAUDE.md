@@ -86,6 +86,7 @@ QML (qml/): Main → ConnectPage → DashboardPage (5 tabs) → DiagnosticsPage,
 | `src/obdsession.*` | The state machine and everything QML calls |
 | `src/sensormodel.*`, `src/sensorseries.*` | Sensors, their samples and colors |
 | `src/recorder.*` | CSV writer, keeps the newest 50 files in AppDataLocation/recordings |
+| `src/customsensors.*` | User-defined sensors: storage, validation, formulas |
 | `src/recording.*`, `src/recordingviewer.*` | Reading a recording back: parsing, summary, series for the charts |
 | `src/health.*` | Health checks on live data |
 | `src/battery.*` | Battery test around starting the engine |
@@ -157,6 +158,13 @@ Things worth knowing before changing them:
   `readFreezeFrame`: the mask (`020000`, `022000`, ...), the code (`020200`)
   and then each supported PID of the table, parsed by `elm::mode02Payload`
   into `freezeFrame` {code, values}; CodesView shows it under that code.
+- **Custom sensors.** `custom::load()` (`custom/sensors`) is read in
+  `finishDiscovery`; each valid one becomes an entry with pid -100, -101, ...,
+  `command`, `header` and a formula compiled by `custom::Evaluator`
+  (QJSEngine, variables A–H). `pollEntry` sends `ATSH<header>` before it and
+  the functional address (`7DF` or `18DB33F1`, from `m_canHeaderChars`)
+  after it on CAN; `elm::customPayload` finds the answer. Never batched,
+  medium pace, unknown to fuel, health and alerts.
 - **Recording viewer.** `RecordingViewer` (QML type, `path`) parses a CSV
   with `recording::parse`, makes one `SensorSeries` per column with
   readings (retention unlimited) and a summary with `recording::summarize`
@@ -175,7 +183,7 @@ Things worth knowing before changing them:
   `background::alert` (Android notification on the high-importance "alerts"
   channel). The monitor is reset only on a connection the user starts.
 - Settings (QSettings): `wifi/*`, `bt/*`, `connect/auto`, `connect/last`,
-  `alerts/enabled`, `alerts/rpm`,
+  `alerts/enabled`, `alerts/rpm`, `custom/sensors`,
   `sensors/active`, `sensors/pinned`, `view/window`, `view/tab`,
   `view/keepScreenOn`, `record/all`, `background/enabled`, `fuel/type`,
   `fuel/engineLiters`, `fuel/correction`, `fuel/price`, `fuel/total/*`,

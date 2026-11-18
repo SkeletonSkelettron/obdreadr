@@ -21,6 +21,8 @@ QVariant SensorModel::data(const QModelIndex &index, int role) const
     case UnitRole:
         return e.series ? e.series->unit() : QString();
     case PidTextRole:
+        if (e.isCustom())
+            return e.header.isEmpty() ? e.command : QStringLiteral("%1 · %2").arg(e.header, e.command);
         return e.pid < 0 ? QStringLiteral("AT RV")
                          : QStringLiteral("01 %1").arg(e.pid, 2, 16, QLatin1Char('0')).toUpper();
     case ActiveRole:

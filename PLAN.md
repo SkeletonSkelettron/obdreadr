@@ -102,7 +102,11 @@ on `live`. CSV column names are now always the English table names
   and the integrator, current fuel settings), max speed and rpm, coolant max,
   voltage range, warm idle rpm, average fuel trims, gaps in the recording.
 
-## 7. Custom sensors (mode 22 and others)
+## 7. Custom sensors (mode 22 and others) — done
+
+The editor is reached from Options on the start page until Settings (10)
+exists. A new sensor's key is added to `sensors/active`, so it is charted
+from its first connection.
 
 - Settings `custom/sensors`: list of {name, unit, header, command, formula,
   min, max}. Editor page (list, add/edit dialog, delete) reached from

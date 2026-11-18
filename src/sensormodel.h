@@ -38,6 +38,13 @@ public:
         int dataLength = -1;   // bytes in its answer, once read on its own
         int batchMisses = 0;   // missing from answers to several PIDs at once
         SensorSeries *series = nullptr;
+        // A custom sensor (pid -100 and below): its request, CAN header and
+        // compiled formula (custom::Evaluator).
+        QString command;
+        QString header;
+        int formula = -1;
+
+        bool isCustom() const { return !command.isEmpty(); }
 
         bool shown() const { return active || pinned; }
     };

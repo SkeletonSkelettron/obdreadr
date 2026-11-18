@@ -132,6 +132,19 @@ std::optional<QByteArray> mode01Payload(const QStringList &lines, quint8 pid)
     return std::nullopt;
 }
 
+std::optional<QByteArray> customPayload(const QStringList &lines, const QString &command)
+{
+    QByteArray prefix = QByteArray::fromHex(compact(command).toLatin1());
+    if (prefix.isEmpty())
+        return std::nullopt;
+    prefix[0] = char(quint8(prefix.at(0)) + 0x40);
+    for (const QByteArray &message : messages(lines)) {
+        if (message.size() > prefix.size() && message.startsWith(prefix))
+            return message.mid(prefix.size());
+    }
+    return std::nullopt;
+}
+
 std::optional<QByteArray> mode02Payload(const QStringList &lines, quint8 pid, quint8 frame)
 {
     const QString prefix = QStringLiteral("42") + obd::hex2(pid) + obd::hex2(frame);

@@ -27,6 +27,7 @@ ApplicationWindow {
         id: stack
         anchors.fill: parent
         initialItem: ConnectPage {
+            onCustomSensorsRequested: stack.push(customSensorsPage)
             onRecordingsRequested: stack.push(recordingsPage)
             onFuelRequested: stack.push(fuelPage)
         }
@@ -68,6 +69,13 @@ ApplicationWindow {
         RecordingsPage {
             onBackRequested: stack.pop()
             onViewRequested: (path) => stack.push(recordingViewPage, { path: path })
+        }
+    }
+
+    Component {
+        id: customSensorsPage
+        CustomSensorsPage {
+            onBackRequested: stack.pop()
         }
     }
 

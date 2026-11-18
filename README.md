@@ -68,6 +68,11 @@ car through an ELM327 OBD-II adapter and draws it as scrolling charts.
   answered, and the measurement and the total carry on. Leaving the dashboard
   disconnects. Some phones also need battery optimization off for the app
   (Fuel tab → Allow running in the background).
+- **Custom sensors**: any request your car answers, typically a mode 22
+  data identifier from your make's list (gearbox temperature, oil level...),
+  with the ECU's CAN header and a formula over the data bytes A–H such as
+  `A-40` or `(A*256+B)/4`. They are charted, recorded and shown like the
+  others (Options → Custom sensors).
 - **Alerts while driving**: an overheating engine (108 °C), a battery that
   stops charging or overcharges, the check engine light coming on, low fuel
   and an optional engine speed limit. They show over the app and, on Android,

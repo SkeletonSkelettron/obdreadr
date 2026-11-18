@@ -92,6 +92,12 @@ QString SimEcu::atCommand(const QString &cmd)
         m_headers = cmd.endsWith(QLatin1Char('1'));
         return QStringLiteral("OK");
     }
+    if (cmd.startsWith(QLatin1String("SH"))) {
+        m_header = cmd.mid(2);
+        if (m_header == QLatin1String("7DF") || m_header == QLatin1String("18DB33F1"))
+            m_header.clear(); // the functional address: every ECU
+        return QStringLiteral("OK");
+    }
     if (cmd == QLatin1String("RV"))
         return QStringLiteral("14.1V");
     if (cmd == QLatin1String("DPN"))
@@ -144,6 +150,14 @@ QString SimEcu::obdCommand(const QString &cmd, double t)
         for (qsizetype i = 2; i + 2 <= cmd.size() && pids.size() < 6; i += 2)
             pids << quint8(cmd.mid(i, 2).toInt(nullptr, 16));
         return prefix + mode01(pids, t);
+    }
+
+    // Mode 22, a manufacturer data identifier: the transmission's
+    // temperature (DID 1105) for the custom sensor demo and tests.
+    if (mode == 0x22) {
+        if (cmd == QLatin1String("221105") && (m_header.isEmpty() || m_header == QLatin1String("7E1")))
+            return prefix + reply({Message{kTransmission, bytes({0x62, 0x11, 0x05, 83 + 40})}});
+        return prefix + QStringLiteral("NO DATA");
     }
 
     if (mode == 0x02)

@@ -2,6 +2,7 @@
 
 #include "alerts.h"
 #include "battery.h"
+#include "customsensors.h"
 #include "elm327.h"
 #include "fuelmeter.h"
 #include "recorder.h"
@@ -64,6 +65,7 @@ class ObdSession : public QObject
     Q_PROPERTY(QVariantList readiness READ readiness NOTIFY dtcChanged)
     Q_PROPERTY(QVariantMap freezeFrame READ freezeFrame NOTIFY dtcChanged)
     Q_PROPERTY(QVariantMap batteryTest READ batteryTest NOTIFY batteryTestChanged)
+    Q_PROPERTY(QVariantList customSensors READ customSensors NOTIFY customSensorsChanged)
     Q_PROPERTY(QVariantList healthChecks READ healthChecks NOTIFY healthChanged)
     Q_PROPERTY(bool testsBusy READ testsBusy NOTIFY testsChanged)
     Q_PROPERTY(bool testsRead READ testsRead NOTIFY testsChanged)
@@ -203,6 +205,15 @@ public:
     Q_INVOKABLE void startBatteryTest();
     Q_INVOKABLE void cancelBatteryTest();
 
+    // Custom sensors (setting `custom/sensors`): [{name, unit, header,
+    // command, formula, min, max}]. Changes apply on the next connection.
+    QVariantList customSensors() const;
+    // An error message, or an empty string when the definition works.
+    Q_INVOKABLE QString validateCustomSensor(const QVariantMap &sensor) const;
+    // Adds (index -1) or replaces a sensor; returns an error or "".
+    Q_INVOKABLE QString saveCustomSensor(int index, const QVariantMap &sensor);
+    Q_INVOKABLE void removeCustomSensor(int index);
+
     // Recordings: one CSV file per connection, kept in the app's storage.
     Q_INVOKABLE void refreshRecordings();
     // Copies a recording to `target` (a file or, on Android, a content:// URL
@@ -222,6 +233,7 @@ signals:
     void pinnedSeriesChanged();
     void dtcChanged();
     void batteryTestChanged();
+    void customSensorsChanged();
     void healthChanged();
     void testsChanged();
     void recordAllChanged();
@@ -314,6 +326,8 @@ private:
     QString m_adapterInfo;
     QString m_protocol;
     bool m_isCan = false;
+    int m_canHeaderChars = 0; // 3 (11 bit) or 8 (29 bit) on CAN, for custom headers
+    custom::Evaluator m_customFormulas;
     QString m_vin;
     SensorModel *m_sensors;
     SensorFilterModel *m_activeSensors;

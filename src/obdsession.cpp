@@ -48,6 +48,7 @@ constexpr int kReconnectDelayMs = 15000;        // between automatic reconnects
 constexpr qint64 kReconnectForMs = 15 * 60000;  // since the car last answered
 constexpr int kServiceRefreshMs = 5000;
 constexpr int kMilPollMs = 60000; // check engine light, for alerts
+constexpr int kCustomPidBase = -100; // custom sensors: -100, -101, ...
 
 const char kVoltageKey[] = "ATRV";
 
@@ -377,6 +378,55 @@ void ObdSession::deliver(const QList<alerts::Alert> &raised)
         emit alertRaised(alert.title, alert.text);
         background::alert(alert.title, alert.text);
     }
+}
+
+QVariantList ObdSession::customSensors() const
+{
+    QVariantList list;
+    for (const custom::Sensor &s : custom::load())
+        list << s.toMap();
+    return list;
+}
+
+QString ObdSession::validateCustomSensor(const QVariantMap &sensor) const
+{
+    return custom::validate(custom::Sensor::fromMap(sensor));
+}
+
+QString ObdSession::saveCustomSensor(int index, const QVariantMap &map)
+{
+    const custom::Sensor sensor = custom::Sensor::fromMap(map);
+    const QString error = custom::validate(sensor);
+    if (!error.isEmpty())
+        return error;
+    QList<custom::Sensor> sensors = custom::load();
+    for (qsizetype i = 0; i < sensors.size(); ++i) {
+        if (i != index && sensors[i].name == sensor.name)
+            return tr("There is already a sensor called %1.").arg(sensor.name);
+    }
+    if (index >= 0 && index < sensors.size()) {
+        sensors[index] = sensor;
+    } else {
+        sensors << sensor;
+        // A new sensor is charted from its first connection.
+        QSettings settings;
+        QStringList active = settings.value(QStringLiteral("sensors/active")).toStringList();
+        active << QStringLiteral("custom:") + sensor.name;
+        settings.setValue(QStringLiteral("sensors/active"), active);
+    }
+    custom::save(sensors);
+    emit customSensorsChanged();
+    return QString();
+}
+
+void ObdSession::removeCustomSensor(int index)
+{
+    QList<custom::Sensor> sensors = custom::load();
+    if (index < 0 || index >= sensors.size())
+        return;
+    sensors.removeAt(index);
+    custom::save(sensors);
+    emit customSensorsChanged();
 }
 
 int ObdSession::rowOfPid(int pid) const
@@ -753,6 +803,7 @@ void ObdSession::onOpened()
             // On CAN, headers tell the ECUs' answers apart, which lets one
             // request ask for several PIDs (see pollBatch).
             const int headerChars = elm::canHeaderLength(r.lines.first());
+            m_canHeaderChars = headerChars;
             if (headerChars == 0)
                 return;
             m_elm.send(QStringLiteral("ATH1"), [this, generation, headerChars](const Elm327::Reply &h) {
@@ -830,6 +881,28 @@ void ObdSession::finishDiscovery()
                                     info->min, info->max, nextColor(), &m_clock, this);
         entries.push_back(e);
         charted << obd::hex2(pid);
+    }
+
+    // The user's own sensors, after the standard ones.
+    m_customFormulas.clear();
+    const QList<custom::Sensor> customs = custom::load();
+    for (qsizetype i = 0; i < customs.size(); ++i) {
+        const custom::Sensor &c = customs[i];
+        QString error;
+        const int formula = custom::validate(c).isEmpty() ? m_customFormulas.compile(c.formula, &error) : -1;
+        if (formula < 0) {
+            appendLog(tr("Custom sensor %1 skipped: %2").arg(c.name, error.isEmpty() ? custom::validate(c) : error));
+            continue;
+        }
+        SensorModel::Entry e;
+        e.key = QStringLiteral("custom:") + c.name;
+        e.pid = kCustomPidBase - int(i);
+        e.favorite = true;
+        e.command = c.command;
+        e.header = c.header;
+        e.formula = formula;
+        e.series = new SensorSeries(c.name, c.unit, 2, c.min, c.max, nextColor(), &m_clock, this);
+        entries.push_back(e);
     }
 
     // Keep the user's previous choices if they fit this car, else the defaults.
@@ -1043,9 +1116,16 @@ void ObdSession::pollEntry(int row)
 {
     SensorModel::Entry &e = m_sensors->entry(row);
     e.lastPollMs = m_clock.elapsed();
-    const QString command = e.pid < 0 ? QString::fromLatin1(kVoltageKey) : QStringLiteral("01") + obd::hex2(quint8(e.pid));
+    const QString command = e.isCustom() ? e.command
+                            : e.pid < 0  ? QString::fromLatin1(kVoltageKey)
+                                         : QStringLiteral("01") + obd::hex2(quint8(e.pid));
     const quint64 generation = m_generation;
     m_polling = true;
+    // A custom sensor with a CAN header: address that ECU for this one
+    // request, then the default (functional) address again.
+    const bool header = e.isCustom() && !e.header.isEmpty() && m_canHeaderChars > 0;
+    if (header)
+        m_elm.send(QStringLiteral("ATSH") + e.header);
     m_elm.send(command, [this, generation, row](const Elm327::Reply &reply) {
         if (!isCurrent(generation))
             return;
@@ -1054,13 +1134,18 @@ void ObdSession::pollEntry(int row)
         if (m_state == Running)
             QMetaObject::invokeMethod(this, &ObdSession::pollNext, Qt::QueuedConnection);
     });
+    if (header)
+        m_elm.send(QStringLiteral("ATSH") + (m_canHeaderChars == 8 ? QStringLiteral("18DB33F1") : QStringLiteral("7DF")));
 }
 
 void ObdSession::handlePollReply(int row, const Elm327::Reply &reply)
 {
     SensorModel::Entry &e = m_sensors->entry(row);
     std::optional<double> value;
-    if (e.pid < 0) {
+    if (e.isCustom()) {
+        if (const auto payload = elm::customPayload(reply.lines, e.command))
+            value = m_customFormulas.evaluate(e.formula, *payload);
+    } else if (e.pid < 0) {
         value = elm::parseVoltage(reply.lines);
     } else if (const auto payload = elm::mode01Payload(reply.lines, quint8(e.pid))) {
         value = obd::decode(quint8(e.pid), *payload);
@@ -1077,7 +1162,7 @@ void ObdSession::handlePollReply(int row, const Elm327::Reply &reply)
     // A sensor the car stopped answering is dropped from the dashboard;
     // timeouts and bus errors say nothing about the sensor itself.
     const bool sensorProblem = reply.error.isEmpty() || reply.error == QLatin1String("NO DATA");
-    if (sensorProblem && e.pid >= 0 && ++e.misses >= kMissesBeforeUnavailable) {
+    if (sensorProblem && (e.pid >= 0 || e.isCustom()) && ++e.misses >= kMissesBeforeUnavailable) {
         appendLog(tr("%1: no data, removed from the dashboard").arg(e.series->name()));
         m_sensors->setAvailable(row, false);
         m_fuel->setAvailablePids(availablePids());
