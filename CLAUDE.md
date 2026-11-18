@@ -17,8 +17,11 @@ owner asked for, in order, with the design worked out. Read it first and tick
 items off there as they land.
 
 Released: v0.2.0 (colors, four views, fault codes, CSV recording/export),
-v0.3.0 (Diagnostics: health checks, readiness, mode 06) and v0.4.0 (Fuel
-tab, background service with automatic reconnect). Every push to
+v0.3.0 (Diagnostics: health checks, readiness, mode 06), v0.4.0 (Fuel
+tab, background service with automatic reconnect) and v0.5.0 (PLAN.md's
+batch: auto-connect, alerts, freeze frame, drives with cost, battery test,
+recording viewer, custom sensors, 0–100 timer and HUD, car Bluetooth
+reminder, Settings page, Georgian). Every push to
 `master` also refreshes the rolling "continuous" pre-release, which the owner
 installs on the phone from
 `https://github.com/SkeletonSkelettron/obdreadr/releases/download/continuous/obdreadr-arm64-v8a.apk`.
