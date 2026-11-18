@@ -13,6 +13,7 @@ Page {
     id: page
 
     signal backRequested()
+    signal viewRequested(string path)
 
     property string message
 
@@ -124,6 +125,12 @@ Page {
                 ColumnLayout {
                     Layout.fillWidth: true
                     spacing: 2
+
+                    // Tap the recording to see it.
+                    TapHandler {
+                        onTapped: page.viewRequested(item.modelData.path)
+                    }
+
                     Label {
                         Layout.fillWidth: true
                         elide: Text.ElideRight

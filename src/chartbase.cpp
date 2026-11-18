@@ -85,8 +85,20 @@ void ChartBase::setTextColor(const QColor &color)
     emit colorsChanged();
 }
 
+void ChartBase::setEndTime(double seconds)
+{
+    if (qFuzzyCompare(m_endTime + 1, seconds + 1))
+        return;
+    m_endTime = seconds;
+    updateTicking();
+    requestRepaint();
+    emit endTimeChanged();
+}
+
 double ChartBase::rightEdge() const
 {
+    if (m_endTime >= 0)
+        return m_endTime;
     return m_live && hasSeries() ? clockNow() : m_frozenAt;
 }
 
@@ -113,7 +125,7 @@ void ChartBase::updateTicking()
 {
     // Repaint a few times a second so the time axis scrolls smoothly even
     // when a sensor is only sampled now and then.
-    if (m_live && hasSeries() && isVisible())
+    if (m_live && m_endTime < 0 && hasSeries() && isVisible())
         m_tick.start();
     else
         m_tick.stop();

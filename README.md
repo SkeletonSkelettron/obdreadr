@@ -50,6 +50,10 @@ car through an ELM327 OBD-II adapter and draws it as scrolling charts.
     afterwards, each with a verdict.
   - **Tests**: the car's own measurements (mode 06, CAN cars) against the
     limits at which it would set a code, and misfire counts per cylinder.
+- **Recordings in the app**: tap a recording to see its summary (duration,
+  distance, fuel and cost, top speed and engine speed, highest coolant
+  temperature, voltage range, warm idle, fuel trim, gaps) and a chart of
+  every sensor over the whole drive.
 - **Recordings for a computer.** Every connection is saved as a CSV file
   (a time column, a timestamp column and one column per sensor, one row per
   reading). ⋮ → Recordings exports a file through Android's save dialog, to

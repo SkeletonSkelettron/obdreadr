@@ -59,6 +59,8 @@ public:
     double now() const;
 
     void append(double t, double v);
+    // Seconds of history kept (15 minutes unless set).
+    void setRetention(double seconds) { m_retention = seconds; }
     const std::deque<Sample> &samples() const { return m_samples; }
 
 signals:
@@ -75,5 +77,6 @@ private:
     QColor m_color;
     const QElapsedTimer *m_clock;
     double m_rangeWindow = 60;
+    double m_retention = 15 * 60;
     std::deque<Sample> m_samples;
 };

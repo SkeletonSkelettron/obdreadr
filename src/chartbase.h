@@ -21,6 +21,7 @@ class ChartBase : public QQuickPaintedItem
 
     Q_PROPERTY(double timeSpan READ timeSpan WRITE setTimeSpan NOTIFY timeSpanChanged)
     Q_PROPERTY(bool live READ live WRITE setLive NOTIFY liveChanged)
+    Q_PROPERTY(double endTime READ endTime WRITE setEndTime NOTIFY endTimeChanged)
     Q_PROPERTY(QColor gridColor READ gridColor WRITE setGridColor NOTIFY colorsChanged)
     Q_PROPERTY(QColor textColor READ textColor WRITE setTextColor NOTIFY colorsChanged)
 
@@ -34,6 +35,10 @@ public:
     bool live() const { return m_live; }
     void setLive(bool live);
 
+    // When 0 or more, the right edge stays at this time (a recording).
+    double endTime() const { return m_endTime; }
+    void setEndTime(double seconds);
+
     QColor gridColor() const { return m_gridColor; }
     void setGridColor(const QColor &color);
     QColor textColor() const { return m_textColor; }
@@ -42,6 +47,7 @@ public:
 signals:
     void timeSpanChanged();
     void liveChanged();
+    void endTimeChanged();
     void colorsChanged();
 
 protected:
@@ -84,6 +90,7 @@ private:
     double m_timeSpan = 60;
     bool m_live = true;
     double m_frozenAt = 0;
+    double m_endTime = -1;
     QColor m_gridColor = QColor(255, 255, 255, 30);
     QColor m_textColor = QColor(255, 255, 255, 140);
     QTimer m_tick;

@@ -25,6 +25,12 @@ struct PidInfo {
 // (bit fields such as monitor status or fuel system status).
 const PidInfo *findPid(quint8 pid);
 
+// The PID a sensor name of the table belongs to (as recordings name their
+// columns): -1 for the adapter's battery reading, -2 when unknown.
+int pidByName(const QString &name);
+// The name the session gives the adapter's battery reading.
+QString adapterVoltageName();
+
 // Decodes the data bytes that follow "41 <pid>" in a response.
 std::optional<double> decode(quint8 pid, const QByteArray &data);
 

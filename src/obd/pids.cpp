@@ -140,6 +140,22 @@ const PidInfo *findPid(quint8 pid)
     return lookup()[pid];
 }
 
+QString adapterVoltageName()
+{
+    return QStringLiteral("Battery voltage (adapter)");
+}
+
+int pidByName(const QString &name)
+{
+    if (name == adapterVoltageName())
+        return -1;
+    for (const PidInfo &info : kPids) {
+        if (name == QString::fromUtf8(info.name))
+            return info.pid;
+    }
+    return -2;
+}
+
 std::optional<double> decode(quint8 pid, const QByteArray &data)
 {
     const PidInfo *info = findPid(pid);

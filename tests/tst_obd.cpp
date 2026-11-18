@@ -9,6 +9,7 @@
 #include "obd/monitors.h"
 #include "obd/simecu.h"
 #include "recorder.h"
+#include "recording.h"
 #include "sensorseries.h"
 
 #include <algorithm>
@@ -697,6 +698,61 @@ private slots:
         QVERIFY(!elm::mode02Payload(ask(ecu, QStringLiteral("010C")), 0x0C, 0));
         ask(ecu, QStringLiteral("04"));
         QCOMPARE(elm::errorIn(ask(ecu, QStringLiteral("020200"))), QStringLiteral("NO DATA"));
+    }
+
+    void readsRecordingsBack()
+    {
+        // A recording as Recorder writes it: speed, fuel rate, coolant and
+        // the adapter's voltage; a 30 s gap in the middle.
+        QTemporaryDir dir;
+        Recorder recorder;
+        const QStringList columns = {QStringLiteral("Vehicle speed [km/h]"), QStringLiteral("Engine fuel rate [L/h]"),
+                                     QStringLiteral("Coolant temperature [°C]"),
+                                     obd::adapterVoltageName() + QStringLiteral(" [V]"), QStringLiteral("Mystery")};
+        QVERIFY(recorder.start(dir.path(), QStringLiteral("car"), columns, QDateTime(QDate(2026, 11, 18), QTime(9, 0))));
+        for (int t = 0; t <= 600; ++t) {
+            if (t > 300 && t < 330)
+                continue;
+            recorder.record(0, t, 60);
+            recorder.record(1, t + 0.5, 6);
+            recorder.record(2, t + 0.5, 85 + t / 100.0);
+            if (t % 10 == 0)
+                recorder.record(3, t, 14.0 + (t % 20 ? 0.2 : 0));
+        }
+        recorder.stop();
+        QFile file(recorder.filePath());
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        QString error;
+        const auto data = recording::parse(file.readAll(), &error);
+        QVERIFY2(data, qPrintable(error));
+        QCOMPARE(data->columns.size(), 5);
+        QCOMPARE(data->columns[0].pid, 0x0D);
+        QCOMPARE(data->columns[0].unit, QStringLiteral("km/h"));
+        QCOMPARE(data->columns[1].pid, 0x5E);
+        QCOMPARE(data->columns[2].name, QStringLiteral("Coolant temperature"));
+        QCOMPARE(data->columns[3].pid, -1);
+        QCOMPARE(data->columns[4].pid, -2);
+        QVERIFY(data->columns[4].points.empty());
+        QCOMPARE(data->start, QDateTime(QDate(2026, 11, 18), QTime(9, 0)));
+
+        recording::FuelSettings settings;
+        settings.price = 3;
+        QHash<QString, QString> summary;
+        for (const auto &item : recording::summarize(*data, settings))
+            summary.insert(item.first, item.second);
+        QCOMPARE(summary.value(QStringLiteral("Duration")), QStringLiteral("0:10:00"));
+        QCOMPARE(summary.value(QStringLiteral("Gaps")), QStringLiteral("1 gap(s), 0:00:30 without data"));
+        QCOMPARE(summary.value(QStringLiteral("Distance")), QStringLiteral("9.50 km")); // 570 s at 60 km/h
+        QCOMPARE(summary.value(QStringLiteral("Fuel")), QStringLiteral("0.95 L"));
+        QCOMPARE(summary.value(QStringLiteral("Average")), QStringLiteral("10.0 L/100 km"));
+        QCOMPARE(summary.value(QStringLiteral("Cost")), QStringLiteral("2.85 ₾"));
+        QCOMPARE(summary.value(QStringLiteral("Top speed")), QStringLiteral("60 km/h"));
+        QCOMPARE(summary.value(QStringLiteral("Highest coolant temperature")), QStringLiteral("91 °C"));
+        QCOMPARE(summary.value(QStringLiteral("Voltage")), QStringLiteral("14.0–14.2 V"));
+
+        QVERIFY(!recording::parse("not,a,recording\n1,2,3"));
+        QCOMPARE(obd::pidByName(QStringLiteral("Engine speed")), 0x0C);
+        QCOMPARE(obd::pidByName(QStringLiteral("Nothing")), -2);
     }
 
     void testsTheBattery()

@@ -1122,11 +1122,16 @@ void ObdSession::setRecordAll(bool on)
 
 void ObdSession::startRecording()
 {
+    // Column names stay in English whatever the UI language, so that the
+    // recording viewer can map them back to PIDs (obd::pidByName).
     QStringList columns;
     for (int row = 0; row < m_sensors->size(); ++row) {
-        const SensorSeries *series = m_sensors->entry(row).series;
-        columns << (series->unit().isEmpty() ? series->name()
-                                             : QStringLiteral("%1 [%2]").arg(series->name(), series->unit()));
+        const SensorModel::Entry &e = m_sensors->entry(row);
+        const obd::PidInfo *info = e.pid >= 0 ? obd::findPid(quint8(e.pid)) : nullptr;
+        const QString name = e.pid == -1 ? obd::adapterVoltageName()
+                             : info      ? QString::fromUtf8(info->name)
+                                         : e.series->name();
+        columns << (e.series->unit().isEmpty() ? name : QStringLiteral("%1 [%2]").arg(name, e.series->unit()));
     }
     if (m_recorder.start(Recorder::defaultDirectory(), m_connectionName, columns, m_clockStart))
         appendLog(tr("Recording to %1").arg(QFileInfo(m_recorder.filePath()).fileName()));

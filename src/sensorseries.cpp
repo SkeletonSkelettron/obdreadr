@@ -7,9 +7,6 @@
 #include <cmath>
 #include <iterator>
 
-namespace {
-constexpr double kRetentionSeconds = 15 * 60;
-} // namespace
 
 SensorSeries::SensorSeries(const QString &name, const QString &unit, int decimals, double nominalMin,
                            double nominalMax, const QColor &color, const QElapsedTimer *clock,
@@ -100,7 +97,7 @@ double SensorSeries::now() const
 void SensorSeries::append(double t, double v)
 {
     m_samples.push_back({t, v});
-    while (!m_samples.empty() && m_samples.front().t < t - kRetentionSeconds)
+    while (!m_samples.empty() && m_samples.front().t < t - m_retention)
         m_samples.pop_front();
     emit changed();
 }

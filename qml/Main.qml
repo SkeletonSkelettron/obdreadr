@@ -67,6 +67,14 @@ ApplicationWindow {
         id: recordingsPage
         RecordingsPage {
             onBackRequested: stack.pop()
+            onViewRequested: (path) => stack.push(recordingViewPage, { path: path })
+        }
+    }
+
+    Component {
+        id: recordingViewPage
+        RecordingViewPage {
+            onBackRequested: stack.pop()
         }
     }
 

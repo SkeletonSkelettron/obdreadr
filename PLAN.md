@@ -84,7 +84,11 @@ to start the engine.
 - New Diagnostics tab "Battery" (BatteryView.qml): instructions, Start,
   results with verdicts.
 
-## 6. Recording viewer
+## 6. Recording viewer — done
+
+Charts use a new `ChartBase.endTime` (a fixed right edge) instead of relying
+on `live`. CSV column names are now always the English table names
+(`obd::adapterVoltageName()` for the voltage), whatever the UI language.
 
 - Tap a recording in RecordingsPage → RecordingViewPage: summary tiles and
   one chart per column.

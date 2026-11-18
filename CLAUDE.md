@@ -86,6 +86,7 @@ QML (qml/): Main → ConnectPage → DashboardPage (5 tabs) → DiagnosticsPage,
 | `src/obdsession.*` | The state machine and everything QML calls |
 | `src/sensormodel.*`, `src/sensorseries.*` | Sensors, their samples and colors |
 | `src/recorder.*` | CSV writer, keeps the newest 50 files in AppDataLocation/recordings |
+| `src/recording.*`, `src/recordingviewer.*` | Reading a recording back: parsing, summary, series for the charts |
 | `src/health.*` | Health checks on live data |
 | `src/battery.*` | Battery test around starting the engine |
 | `src/alerts.*` | Alerts while driving: overheating, charging, check engine light, rpm limit, low fuel |
@@ -156,6 +157,12 @@ Things worth knowing before changing them:
   `readFreezeFrame`: the mask (`020000`, `022000`, ...), the code (`020200`)
   and then each supported PID of the table, parsed by `elm::mode02Payload`
   into `freezeFrame` {code, values}; CodesView shows it under that code.
+- **Recording viewer.** `RecordingViewer` (QML type, `path`) parses a CSV
+  with `recording::parse`, makes one `SensorSeries` per column with
+  readings (retention unlimited) and a summary with `recording::summarize`
+  (the Fuel tab's settings). Columns map back to PIDs by their English
+  names (`obd::pidByName`), so `startRecording` writes the table names, not
+  translated ones. Charts on that page set `endTime` (fixed right edge).
 - **Battery test.** `startBatteryTest()` creates a `battery::Test`
   (`src/battery.*`: phases resting 3 s → crank → running → done 10 s after
   the start, or 60 s without one); while it exists `pollNext` only calls
