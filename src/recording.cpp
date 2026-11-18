@@ -14,11 +14,6 @@ namespace recording {
 
 namespace {
 
-QString tr(const char *text)
-{
-    return QCoreApplication::translate("Recording", text);
-}
-
 QString num(double v, int decimals)
 {
     return QLocale::c().toString(v, 'f', decimals);
@@ -104,7 +99,7 @@ std::optional<Data> parse(const QByteArray &csv, QString *error)
     const QList<QByteArray> lines = csv.split('\n');
     if (lines.isEmpty() || !lines.first().startsWith("time_s,timestamp")) {
         if (error)
-            *error = tr("This is not a recording of this app.");
+            *error = QCoreApplication::translate("Recording", "This is not a recording of this app.");
         return std::nullopt;
     }
 
@@ -149,7 +144,7 @@ std::optional<Data> parse(const QByteArray &csv, QString *error)
     }
     if (data.rowTimes.isEmpty()) {
         if (error)
-            *error = tr("The recording has no readings.");
+            *error = QCoreApplication::translate("Recording", "The recording has no readings.");
         return std::nullopt;
     }
     return data;
@@ -158,7 +153,7 @@ std::optional<Data> parse(const QByteArray &csv, QString *error)
 QList<QPair<QString, QString>> summarize(const Data &data, const FuelSettings &settings)
 {
     QList<QPair<QString, QString>> out;
-    out << qMakePair(tr("Duration"), duration(data.lastTime - data.firstTime));
+    out << qMakePair(QCoreApplication::translate("Recording", "Duration"), duration(data.lastTime - data.firstTime));
 
     // Gaps: the adapter or the phone stopped for a while.
     int gaps = 0;
@@ -170,8 +165,8 @@ QList<QPair<QString, QString>> summarize(const Data &data, const FuelSettings &s
             missing += dt;
         }
     }
-    out << qMakePair(tr("Gaps"),
-                     gaps == 0 ? tr("none")
+    out << qMakePair(QCoreApplication::translate("Recording", "Gaps"),
+                     gaps == 0 ? QCoreApplication::translate("Recording", "none")
                                : QCoreApplication::translate("Recording", "%n gap(s), %1 without data", nullptr, gaps)
                                      .arg(duration(missing)));
 
@@ -185,7 +180,7 @@ QList<QPair<QString, QString>> summarize(const Data &data, const FuelSettings &s
         km = 0;
         for (const Point &p : speed->points)
             km += integrator.add(p.t, p.v).area / 3600.0;
-        out << qMakePair(tr("Distance"), num(km, km < 10 ? 2 : 1) + QStringLiteral(" km"));
+        out << qMakePair(QCoreApplication::translate("Recording", "Distance"), num(km, km < 10 ? 2 : 1) + QStringLiteral(" km"));
     }
 
     // Fuel, the same way as the Fuel tab with the current settings.
@@ -227,11 +222,11 @@ QList<QPair<QString, QString>> summarize(const Data &data, const FuelSettings &s
     }
     if (method != fuel::Method::None) {
         liters *= settings.correction;
-        out << qMakePair(tr("Fuel"), num(liters, liters < 10 ? 2 : 1) + QStringLiteral(" L"));
+        out << qMakePair(QCoreApplication::translate("Recording", "Fuel"), num(liters, liters < 10 ? 2 : 1) + QStringLiteral(" L"));
         if (km >= 1)
-            out << qMakePair(tr("Average"), num(liters / km * 100, 1) + QStringLiteral(" L/100 km"));
+            out << qMakePair(QCoreApplication::translate("Recording", "Average"), num(liters / km * 100, 1) + QStringLiteral(" L/100 km"));
         if (settings.price > 0)
-            out << qMakePair(tr("Cost"), num(liters * settings.price, 2) + QStringLiteral(" ₾"));
+            out << qMakePair(QCoreApplication::translate("Recording", "Cost"), num(liters * settings.price, 2) + QStringLiteral(" ₾"));
     }
 
     const auto highest = [](const Column *c) {
@@ -241,11 +236,11 @@ QList<QPair<QString, QString>> summarize(const Data &data, const FuelSettings &s
         return best;
     };
     if (speed)
-        out << qMakePair(tr("Top speed"), num(highest(speed), 0) + QStringLiteral(" km/h"));
+        out << qMakePair(QCoreApplication::translate("Recording", "Top speed"), num(highest(speed), 0) + QStringLiteral(" km/h"));
     if (rpm)
-        out << qMakePair(tr("Highest engine speed"), num(highest(rpm), 0) + QStringLiteral(" rpm"));
+        out << qMakePair(QCoreApplication::translate("Recording", "Highest engine speed"), num(highest(rpm), 0) + QStringLiteral(" rpm"));
     if (coolant)
-        out << qMakePair(tr("Highest coolant temperature"), num(highest(coolant), 0) + QStringLiteral(" °C"));
+        out << qMakePair(QCoreApplication::translate("Recording", "Highest coolant temperature"), num(highest(coolant), 0) + QStringLiteral(" °C"));
 
     const Column *volts = column(data, 0x42);
     if (!volts)
@@ -257,7 +252,7 @@ QList<QPair<QString, QString>> summarize(const Data &data, const FuelSettings &s
             lo = std::min(lo, p.v);
             hi = std::max(hi, p.v);
         }
-        out << qMakePair(tr("Voltage"), QStringLiteral("%1–%2 V").arg(num(lo, 1), num(hi, 1)));
+        out << qMakePair(QCoreApplication::translate("Recording", "Voltage"), QStringLiteral("%1–%2 V").arg(num(lo, 1), num(hi, 1)));
     }
 
     // Warm idle and fuel trim, as in the health checks.
@@ -274,7 +269,7 @@ QList<QPair<QString, QString>> summarize(const Data &data, const FuelSettings &s
                 idle.push_back(p.v);
         }
         if (idle.size() >= 5)
-            out << qMakePair(tr("Warm idle"), num(mean(idle), 0) + QStringLiteral(" rpm"));
+            out << qMakePair(QCoreApplication::translate("Recording", "Warm idle"), num(mean(idle), 0) + QStringLiteral(" rpm"));
     }
     const Column *shortTrim = column(data, 0x06);
     const Column *longTrim = column(data, 0x07);
@@ -296,7 +291,7 @@ QList<QPair<QString, QString>> summarize(const Data &data, const FuelSettings &s
         }
         if (trims.size() >= 5) {
             const double avg = mean(trims);
-            out << qMakePair(tr("Fuel trim, bank 1"), (avg > 0 ? QStringLiteral("+") : QString()) + num(avg, 1)
+            out << qMakePair(QCoreApplication::translate("Recording", "Fuel trim, bank 1"), (avg > 0 ? QStringLiteral("+") : QString()) + num(avg, 1)
                                                           + QStringLiteral(" %"));
         }
     }

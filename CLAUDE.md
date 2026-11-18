@@ -7,7 +7,8 @@ user-facing description; this file is how the code works and how to keep
 working on it.
 
 The owner talks to Claude in Georgian; answer in Georgian and keep it short.
-The app's UI and the code (identifiers, comments, commit messages) are English.
+The code (identifiers, comments, commit messages) is English; the UI is
+English with a Georgian translation (see Translation below).
 
 ## Status
 
@@ -86,6 +87,7 @@ QML (qml/): Main → ConnectPage → DashboardPage (5 tabs) → DiagnosticsPage,
 | `src/obdsession.*` | The state machine and everything QML calls |
 | `src/sensormodel.*`, `src/sensorseries.*` | Sensors, their samples and colors |
 | `src/recorder.*` | CSV writer, keeps the newest 50 files in AppDataLocation/recordings |
+| `src/language.*`, `i18n/` | UI language: translator, Georgian .ts and the filling script |
 | `src/accel.*` | 0–60 and 0–100 km/h timer |
 | `src/customsensors.*` | User-defined sensors: storage, validation, formulas |
 | `src/recording.*`, `src/recordingviewer.*` | Reading a recording back: parsing, summary, series for the charts |
@@ -194,7 +196,11 @@ Things worth knowing before changing them:
   alert, emits `alertRaised` (Main.qml's banner) and calls
   `background::alert` (Android notification on the high-importance "alerts"
   channel). The monitor is reset only on a connection the user starts.
-- Settings (QSettings): `wifi/*`, `bt/*`, `connect/auto`, `connect/last`,
+- **Settings page.** Everything that is not about one tab (connection,
+  background, reminder, recording, alerts, custom sensors, language) is on
+  `SettingsPage.qml`, reached from the start page's header and the dashboard
+  menu.
+- Settings (QSettings): `ui/language`, `wifi/*`, `bt/*`, `connect/auto`, `connect/last`,
   `alerts/enabled`, `alerts/rpm`, `custom/sensors`, `accel/best100`,
   `reminder/address`, `reminder/name`,
   `sensors/active`, `sensors/pinned`, `view/window`, `view/tab`,
@@ -230,7 +236,30 @@ lint were run locally; the tests and the APK came from CI. The home PC
 desktop build, the tests and the QML lint run there; no Android toolchain.
 
 QML conventions: `pragma ComponentBehavior: Bound`, delegates with `required`
-properties, ids qualified — that keeps `all_qmllint` clean.
+properties, ids qualified — that keeps `all_qmllint` clean. Dialogs use
+`ConfirmButtons` (qsTr texts), not `standardButtons`.
+
+### Translation
+
+Georgian lives in `i18n/obdreadr_ka.ts`, compiled by `qt_add_translations`
+into `:/i18n/obdreadr_ka.qm` when Qt's LinguistTools are found (optional, so
+a Qt without them still builds). `language::apply` (`src/language.*`)
+installs it at start and when `ObdSession.language` changes, then the QML
+engine retranslates. After adding or changing UI strings:
+
+```sh
+cmake --build build --target update_translations   # lupdate into the .ts
+python i18n/fill_ts.py                              # fills from i18n/ka_translations.py, lists what is missing
+```
+
+Add the missing ones to `i18n/ka_translations.py` (keyed by English
+source; `"Context|source"` for a context of its own) and run it again.
+C++ outside QObject classes uses `QCoreApplication::translate("Context",
+"...")` with a literal context (Health, Alerts, Recording, CustomSensors,
+Monitors) so lupdate finds it; table strings use `QT_TRANSLATE_NOOP`
+(PID names: `obd::displayName`). Recordings keep the English PID names in
+their CSV header, which the viewer maps back with `obd::pidByName`. The
+fault code descriptions in `dtc.cpp` are not translated yet.
 
 ## CI and releases
 
@@ -280,4 +309,4 @@ error annotation. Unauthenticated API calls are limited to 60 an hour.
   improve the MAF and speed-density estimates.
 - Starting by itself when the adapter appears (a boot or Bluetooth receiver
   and a Qt service process); today the app must be opened to connect.
-- A Georgian translation of the UI (strings are already in `tr`/`qsTr`).
+- Georgian descriptions of the fault codes (`dtc.cpp`).

@@ -1004,7 +1004,7 @@ void ObdSession::finishDiscovery()
         e.key = modeKey(pid);
         e.pid = pid;
         e.favorite = info->favorite;
-        e.series = new SensorSeries(QString::fromUtf8(info->name), QString::fromUtf8(info->unit), info->decimals,
+        e.series = new SensorSeries(obd::displayName(*info), QString::fromUtf8(info->unit), info->decimals,
                                     info->min, info->max, nextColor(), &m_clock, this);
         entries.push_back(e);
         charted << obd::hex2(pid);
@@ -1638,7 +1638,7 @@ void ObdSession::readFreezeFrameValues(const QList<quint8> &pids)
             QVariantList values = m_freezeFrame.value(QStringLiteral("values")).toList();
             const QString unit = QString::fromUtf8(info->unit);
             values << QVariantMap{
-                {QStringLiteral("name"), QString::fromUtf8(info->name)},
+                {QStringLiteral("name"), obd::displayName(*info)},
                 {QStringLiteral("value"), QLocale::c().toString(*value, 'f', info->decimals)
                                               + (unit.isEmpty() ? QString() : QStringLiteral(" ") + unit)},
             };

@@ -3,6 +3,7 @@
 #include "obd/elmparser.h"
 #include "obd/pids.h"
 
+#include <QCoreApplication>
 #include <QHash>
 
 namespace obd {
@@ -83,9 +84,9 @@ Scale scaleFor(quint8 uasid)
     return {1, 0, "", 0};
 }
 
-QString bankSensor(int index, int sensorsPerBank)
+QString tm(const char *text)
 {
-    return QStringLiteral("bank %1 sensor %2").arg(index / sensorsPerBank + 1).arg(index % sensorsPerBank + 1);
+    return QCoreApplication::translate("Monitors", text);
 }
 
 } // namespace
@@ -101,19 +102,25 @@ QList<Monitor> readiness(const QByteArray &pid01)
 
     // Byte B: continuous monitors; bits 0-2 supported, bits 4-6 not complete.
     QList<Monitor> monitors = {
-        {QStringLiteral("Misfire"), bool(b & 0x01), !(b & 0x10)},
-        {QStringLiteral("Fuel system"), bool(b & 0x02), !(b & 0x20)},
-        {QStringLiteral("Components"), bool(b & 0x04), !(b & 0x40)},
+        {QCoreApplication::translate("Monitors", "Misfire"), bool(b & 0x01), !(b & 0x10)},
+        {QCoreApplication::translate("Monitors", "Fuel system"), bool(b & 0x02), !(b & 0x20)},
+        {QCoreApplication::translate("Monitors", "Components"), bool(b & 0x04), !(b & 0x40)},
     };
     // Bytes C and D: the other monitors, supported and not complete.
-    static const char *kSpark[] = {"Catalyst", "Heated catalyst", "Evaporative system", "Secondary air",
-                                   "A/C refrigerant", "O2 sensor", "O2 sensor heater", "EGR / VVT"};
-    static const char *kDiesel[] = {"NMHC catalyst", "NOx / SCR aftertreatment", nullptr, "Boost pressure",
-                                    nullptr, "Exhaust gas sensor", "Particulate filter", "EGR / VVT"};
+    static const char *kSpark[] = {
+        QT_TRANSLATE_NOOP("Monitors", "Catalyst"), QT_TRANSLATE_NOOP("Monitors", "Heated catalyst"),
+        QT_TRANSLATE_NOOP("Monitors", "Evaporative system"), QT_TRANSLATE_NOOP("Monitors", "Secondary air"),
+        QT_TRANSLATE_NOOP("Monitors", "A/C refrigerant"), QT_TRANSLATE_NOOP("Monitors", "O2 sensor"),
+        QT_TRANSLATE_NOOP("Monitors", "O2 sensor heater"), QT_TRANSLATE_NOOP("Monitors", "EGR / VVT")};
+    static const char *kDiesel[] = {
+        QT_TRANSLATE_NOOP("Monitors", "NMHC catalyst"), QT_TRANSLATE_NOOP("Monitors", "NOx / SCR aftertreatment"),
+        nullptr, QT_TRANSLATE_NOOP("Monitors", "Boost pressure"),
+        nullptr, QT_TRANSLATE_NOOP("Monitors", "Exhaust gas sensor"),
+        QT_TRANSLATE_NOOP("Monitors", "Particulate filter"), QT_TRANSLATE_NOOP("Monitors", "EGR / VVT")};
     for (int bit = 0; bit < 8; ++bit) {
         const char *name = diesel ? kDiesel[bit] : kSpark[bit];
         if (name)
-            monitors << Monitor{QString::fromLatin1(name), bool(c & (1 << bit)), !(d & (1 << bit))};
+            monitors << Monitor{tm(name), bool(c & (1 << bit)), !(d & (1 << bit))};
     }
     return monitors;
 }
@@ -155,71 +162,74 @@ QList<TestResult> parseTests(const QStringList &lines)
 
 QString monitorName(quint8 mid)
 {
+    const auto bankSensor = [](const char *text, int index) {
+        return QCoreApplication::translate("Monitors", text).arg(index / 4 + 1).arg(index % 4 + 1);
+    };
     if (mid >= 0x01 && mid <= 0x10)
-        return QStringLiteral("O2 sensor, ") + bankSensor(mid - 0x01, 4);
+        return bankSensor(QT_TRANSLATE_NOOP("Monitors", "O2 sensor, bank %1 sensor %2"), mid - 0x01);
     if (mid >= 0x21 && mid <= 0x24)
-        return QStringLiteral("Catalyst, bank %1").arg(mid - 0x20);
+        return QCoreApplication::translate("Monitors", "Catalyst, bank %1").arg(mid - 0x20);
     if (mid >= 0x31 && mid <= 0x34)
-        return QStringLiteral("EGR / VVT, bank %1").arg(mid - 0x30);
+        return QCoreApplication::translate("Monitors", "EGR / VVT, bank %1").arg(mid - 0x30);
     if (mid >= 0x35 && mid <= 0x38)
-        return QStringLiteral("VVT, bank %1").arg(mid - 0x34);
+        return QCoreApplication::translate("Monitors", "VVT, bank %1").arg(mid - 0x34);
     switch (mid) {
-    case 0x39: return QStringLiteral("Evaporative system, cap off or 0.150\" leak");
-    case 0x3A: return QStringLiteral("Evaporative system, 0.090\" leak");
-    case 0x3B: return QStringLiteral("Evaporative system, 0.040\" leak");
-    case 0x3C: return QStringLiteral("Evaporative system, 0.020\" leak");
-    case 0x3D: return QStringLiteral("Purge flow");
-    case 0xA1: return QStringLiteral("Misfire, all cylinders");
+    case 0x39: return QCoreApplication::translate("Monitors", "Evaporative system, cap off or 0.150\" leak");
+    case 0x3A: return QCoreApplication::translate("Monitors", "Evaporative system, 0.090\" leak");
+    case 0x3B: return QCoreApplication::translate("Monitors", "Evaporative system, 0.040\" leak");
+    case 0x3C: return QCoreApplication::translate("Monitors", "Evaporative system, 0.020\" leak");
+    case 0x3D: return QCoreApplication::translate("Monitors", "Purge flow");
+    case 0xA1: return QCoreApplication::translate("Monitors", "Misfire, all cylinders");
     default: break;
     }
     if (mid >= 0x41 && mid <= 0x50)
-        return QStringLiteral("O2 sensor heater, ") + bankSensor(mid - 0x41, 4);
+        return bankSensor(QT_TRANSLATE_NOOP("Monitors", "O2 sensor heater, bank %1 sensor %2"), mid - 0x41);
     if (mid >= 0x61 && mid <= 0x64)
-        return QStringLiteral("Heated catalyst, bank %1").arg(mid - 0x60);
+        return QCoreApplication::translate("Monitors", "Heated catalyst, bank %1").arg(mid - 0x60);
     if (mid >= 0x71 && mid <= 0x74)
-        return QStringLiteral("Secondary air %1").arg(mid - 0x70);
+        return QCoreApplication::translate("Monitors", "Secondary air %1").arg(mid - 0x70);
     if (mid >= 0x81 && mid <= 0x84)
-        return QStringLiteral("Fuel system, bank %1").arg(mid - 0x80);
+        return QCoreApplication::translate("Monitors", "Fuel system, bank %1").arg(mid - 0x80);
     if (mid >= 0x85 && mid <= 0x88)
-        return QStringLiteral("Boost pressure control, bank %1").arg(mid - 0x84);
+        return QCoreApplication::translate("Monitors", "Boost pressure control, bank %1").arg(mid - 0x84);
     if (mid >= 0x90 && mid <= 0x91)
-        return QStringLiteral("NOx adsorber, bank %1").arg(mid - 0x8F);
+        return QCoreApplication::translate("Monitors", "NOx adsorber, bank %1").arg(mid - 0x8F);
     if (mid >= 0x98 && mid <= 0x99)
-        return QStringLiteral("NOx catalyst, bank %1").arg(mid - 0x97);
+        return QCoreApplication::translate("Monitors", "NOx catalyst, bank %1").arg(mid - 0x97);
     if (mid >= 0xA2 && mid <= 0xAD)
-        return QStringLiteral("Misfire, cylinder %1").arg(mid - 0xA1);
+        return QCoreApplication::translate("Monitors", "Misfire, cylinder %1").arg(mid - 0xA1);
     if (mid >= 0xB0 && mid <= 0xB1)
-        return QStringLiteral("Particulate filter, bank %1").arg(mid - 0xAF);
-    return QStringLiteral("Monitor %1").arg(hex2(mid));
+        return QCoreApplication::translate("Monitors", "Particulate filter, bank %1").arg(mid - 0xAF);
+    return QCoreApplication::translate("Monitors", "Monitor %1").arg(hex2(mid));
 }
 
 QString testName(quint8 mid, quint8 tid)
 {
     if (mid >= 0xA1 && mid <= 0xAD) {
         if (tid == 0x0B)
-            return QStringLiteral("Misfires, average of the last 10 drives");
+            return QCoreApplication::translate("Monitors", "Misfires, average of the last 10 drives");
         if (tid == 0x0C)
-            return QStringLiteral("Misfires, last or current drive");
+            return QCoreApplication::translate("Monitors", "Misfires, last or current drive");
     }
     if (mid >= 0x01 && mid <= 0x10) {
         static const char *kO2Tests[] = {
             nullptr,
-            "Rich to lean threshold voltage",
-            "Lean to rich threshold voltage",
-            "Low voltage for switch time",
-            "High voltage for switch time",
-            "Rich to lean switch time",
-            "Lean to rich switch time",
-            "Minimum voltage",
-            "Maximum voltage",
-            "Time between transitions",
-            "Sensor period",
+            QT_TRANSLATE_NOOP("Monitors", "Rich to lean threshold voltage"),
+            QT_TRANSLATE_NOOP("Monitors", "Lean to rich threshold voltage"),
+            QT_TRANSLATE_NOOP("Monitors", "Low voltage for switch time"),
+            QT_TRANSLATE_NOOP("Monitors", "High voltage for switch time"),
+            QT_TRANSLATE_NOOP("Monitors", "Rich to lean switch time"),
+            QT_TRANSLATE_NOOP("Monitors", "Lean to rich switch time"),
+            QT_TRANSLATE_NOOP("Monitors", "Minimum voltage"),
+            QT_TRANSLATE_NOOP("Monitors", "Maximum voltage"),
+            QT_TRANSLATE_NOOP("Monitors", "Time between transitions"),
+            QT_TRANSLATE_NOOP("Monitors", "Sensor period"),
         };
         if (tid >= 0x01 && tid <= 0x0A)
-            return QString::fromLatin1(kO2Tests[tid]);
+            return tm(kO2Tests[tid]);
     }
-    return tid >= 0x80 ? QStringLiteral("Test %1 (maker-defined)").arg(hex2(tid))
-                       : QStringLiteral("Test %1").arg(hex2(tid));
+    return tid >= 0x80 ? QCoreApplication::translate("Monitors", "Test %1 (maker-defined)").arg(hex2(tid))
+                       : QCoreApplication::translate("Monitors", "Test %1").arg(hex2(tid));
 }
 
 } // namespace obd

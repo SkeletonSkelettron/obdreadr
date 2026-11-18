@@ -4,6 +4,7 @@
 #include "recording.h"
 #include "sensorseries.h"
 
+#include <QCoreApplication>
 #include <QFile>
 #include <QLocale>
 #include <QSettings>
@@ -64,7 +65,11 @@ void RecordingViewer::load()
             lo = std::min(lo, p.v);
             hi = std::max(hi, p.v);
         }
-        auto *series = new SensorSeries(column.name, column.unit, info ? info->decimals : (column.pid == -1 ? 2 : 1),
+        // Shown in the UI language; the file has the English names.
+        const QString name = info                ? obd::displayName(*info)
+                             : column.pid == -1 ? QCoreApplication::translate("ObdSession", "Battery voltage (adapter)")
+                                                : column.name;
+        auto *series = new SensorSeries(name, column.unit, info ? info->decimals : (column.pid == -1 ? 2 : 1),
                                         info ? info->min : lo, info ? info->max : hi,
                                         SensorSeries::paletteColor(index++), nullptr, this);
         series->setRetention(std::numeric_limits<double>::max());

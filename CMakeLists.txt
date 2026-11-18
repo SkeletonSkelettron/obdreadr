@@ -84,6 +84,18 @@ target_include_directories(obdreadr PRIVATE src)
 target_link_libraries(obdreadr PRIVATE
     Qt6::Core Qt6::Gui Qt6::Network Qt6::Qml Qt6::Quick Qt6::QuickControls2)
 
+# The Georgian translation, as :/i18n/obdreadr_ka.qm; optional, so a Qt
+# without its Linguist tools still builds the app (in English).
+find_package(Qt6 QUIET COMPONENTS LinguistTools)
+if(TARGET Qt6::lrelease)
+    qt_add_translations(TARGETS obdreadr
+        TS_FILES i18n/obdreadr_ka.ts
+        RESOURCE_PREFIX /i18n
+        LUPDATE_OPTIONS -no-obsolete -locations none)
+else()
+    message(WARNING "Qt Linguist tools not found: building without translations")
+endif()
+
 if(TARGET Qt6::Bluetooth)
     target_sources(obdreadr PRIVATE
         src/transport/btclassictransport.h src/transport/btclassictransport.cpp

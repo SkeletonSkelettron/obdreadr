@@ -10,11 +10,6 @@ namespace custom {
 
 namespace {
 
-QString tr(const char *text)
-{
-    return QCoreApplication::translate("CustomSensors", text);
-}
-
 bool isHexText(const QString &text)
 {
     static const QRegularExpression kHex(QStringLiteral("^[0-9A-Fa-f]+$"));
@@ -66,22 +61,22 @@ void save(const QList<Sensor> &sensors)
 QString validate(const Sensor &sensor)
 {
     if (sensor.name.isEmpty())
-        return tr("Give the sensor a name.");
+        return QCoreApplication::translate("CustomSensors", "Give the sensor a name.");
     if (sensor.command.size() < 2 || sensor.command.size() % 2 != 0 || !isHexText(sensor.command))
-        return tr("The command is hex bytes, e.g. 221105.");
+        return QCoreApplication::translate("CustomSensors", "The command is hex bytes, e.g. 221105.");
     if (!sensor.header.isEmpty()
         && ((sensor.header.size() != 3 && sensor.header.size() != 8) || !isHexText(sensor.header)))
-        return tr("The header is 3 hex digits (7E0) or 8 (18DA10F1), or empty.");
+        return QCoreApplication::translate("CustomSensors", "The header is 3 hex digits (7E0) or 8 (18DA10F1), or empty.");
     if (sensor.formula.isEmpty())
-        return tr("Enter a formula, e.g. A-40 or (A*256+B)/4.");
+        return QCoreApplication::translate("CustomSensors", "Enter a formula, e.g. A-40 or (A*256+B)/4.");
     if (!(sensor.max > sensor.min))
-        return tr("The maximum must be above the minimum.");
+        return QCoreApplication::translate("CustomSensors", "The maximum must be above the minimum.");
     Evaluator evaluator;
     QString error;
     if (evaluator.compile(sensor.formula, &error) < 0)
         return error;
     if (!evaluator.evaluate(0, QByteArray(8, char(1))))
-        return tr("The formula does not give a number.");
+        return QCoreApplication::translate("CustomSensors", "The formula does not give a number.");
     return QString();
 }
 
@@ -93,7 +88,7 @@ int Evaluator::compile(const QString &formula, QString *error)
         QStringLiteral("(function(A, B, C, D, E, F, G, H) { return (%1); })").arg(formula));
     if (fn.isError() || !fn.isCallable()) {
         if (error)
-            *error = tr("The formula does not work: %1").arg(fn.isError() ? fn.toString() : formula);
+            *error = QCoreApplication::translate("CustomSensors", "The formula does not work: %1").arg(fn.isError() ? fn.toString() : formula);
         return -1;
     }
     m_functions << fn;

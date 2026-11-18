@@ -77,16 +77,17 @@ car through an ELM327 OBD-II adapter and draws it as scrolling charts.
   data identifier from your make's list (gearbox temperature, oil level...),
   with the ECU's CAN header and a formula over the data bytes A–H such as
   `A-40` or `(A*256+B)/4`. They are charted, recorded and shown like the
-  others (Options → Custom sensors).
+  others (Settings → Custom sensors).
 - **Alerts while driving**: an overheating engine (108 °C), a battery that
   stops charging or overcharges, the check engine light coming on, low fuel
   and an optional engine speed limit. They show over the app and, on Android,
   as a notification that sounds even with the screen off.
 - **Connects by itself.** When the app starts it connects to the adapter
-  used last, and the screen stays on while connected (both switchable under
-  Options on the start page). Android does not let an app open itself, so
+  used last, and the screen stays on while connected (both switchable in
+  Settings). Android does not let an app open itself, so
   instead pick the car's own Bluetooth (the stereo): when it connects, a
   notification "Car connected – tap to start reading" opens the app.
+- **English or Georgian** (Settings → Language; the phone's language by default).
 - **Demo car**, a built-in simulated ELM327, for trying the app without a car.
 - Shows the VIN, the protocol and the battery voltage, and keeps a log of the
   conversation with the adapter (⋮ → Log).

@@ -25,6 +25,9 @@ struct PidInfo {
 // (bit fields such as monitor status or fuel system status).
 const PidInfo *findPid(quint8 pid);
 
+// The name shown in the UI language (the table's names are English).
+QString displayName(const PidInfo &info);
+
 // The PID a sensor name of the table belongs to (as recordings name their
 // columns): -1 for the adapter's battery reading, -2 when unknown.
 int pidByName(const QString &name);

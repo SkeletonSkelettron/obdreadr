@@ -11,7 +11,7 @@ simulator's second ECU). It has not met a real car yet (see CLAUDE.md, Status).
 
 ## 1. Auto-connect on start, keep the screen on — done
 
-Switches on the start page (Options) until the Settings page (10) exists.
+Switches on the Settings page.
 
 - Settings `connect/auto` (default on) and `connect/last` (`bt`, `wifi`,
   `demo`, written by each `connect*`). `Q_INVOKABLE connectLast()` and a
@@ -26,7 +26,7 @@ Switches on the start page (Options) until the Settings page (10) exists.
 
 ## 2. Alerts while driving — done
 
-Switch and engine speed limit under Options on the start page for now.
+Switch and engine speed limit on the Settings page.
 
 - Pure logic in new `src/alerts.*` (`alerts::Monitor`): fed every reading
   (pid, t, value; pid -1 = adapter voltage) and the check engine status;
@@ -104,8 +104,7 @@ on `live`. CSV column names are now always the English table names
 
 ## 7. Custom sensors (mode 22 and others) — done
 
-The editor is reached from Options on the start page until Settings (10)
-exists. A new sensor's key is added to `sensors/active`, so it is charted
+The editor is reached from the Settings page. A new sensor's key is added to `sensors/active`, so it is charted
 from its first connection.
 
 - Settings `custom/sensors`: list of {name, unit, header, command, formula,
@@ -143,7 +142,7 @@ picture top to bottom, for a phone lying with its top toward the windscreen.
 ## 9. Car Bluetooth reminder (instead of a fully automatic start) — done
 
 The reminder is skipped while the service runs (already connected). The
-picker is on the start page (Options) until Settings (10) exists. Java is
+picker is on the Settings page. Java is
 only compiled by CI.
 
 Android does not let an app open itself from the background, and an ELM327
@@ -158,7 +157,12 @@ does not announce itself when it powers up, so a tap stays necessary:
 - Settings: pick the trigger from the paired devices
   (`BluetoothAdapter.getBondedDevices()` through JNI, as JSON).
 
-## 10. Settings page and Georgian
+## 10. Settings page and Georgian — done
+
+All 593 strings are translated, the sensor names (PID table) and the
+monitor names included. The fault code descriptions (`dtc.cpp`, SAE
+wording) stay English for now. Dialog buttons are `ConfirmButtons` with
+qsTr texts instead of standard buttons.
 
 - SettingsPage (from ConnectPage and the dashboard menu): connection
   (connect on start, keep screen on, background), alerts, car Bluetooth
