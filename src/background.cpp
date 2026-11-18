@@ -53,6 +53,14 @@ void stop()
         QJniObject::callStaticMethod<void>(kClass, "stop", "(Landroid/content/Context;)V", ctx.object());
 }
 
+void keepScreenOn(bool on)
+{
+    const QJniObject ctx = context();
+    if (ctx.isValid())
+        QJniObject::callStaticMethod<void>(kClass, "keepScreenOn", "(Landroid/content/Context;Z)V", ctx.object(),
+                                           jboolean(on));
+}
+
 bool batteryRestricted()
 {
     const QJniObject ctx = context();
@@ -78,6 +86,7 @@ bool supported() { return false; }
 void start(const QString &, const QString &) {}
 void update(const QString &, const QString &) {}
 void stop() {}
+void keepScreenOn(bool) {}
 bool batteryRestricted() { return false; }
 void requestUnrestricted() {}
 

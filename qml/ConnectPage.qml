@@ -12,6 +12,9 @@ Page {
     signal recordingsRequested()
     signal fuelRequested()
 
+    // Connect to the last adapter by itself, once per app start.
+    Component.onCompleted: ObdSession.connectOnStart()
+
     header: ToolBar {
         Label {
             anchors.fill: parent
@@ -232,6 +235,36 @@ Page {
                     Button {
                         text: qsTr("Fuel…")
                         onClicked: page.fuelRequested()
+                    }
+                }
+            }
+
+            // Options --------------------------------------------------------
+            Pane {
+                Layout.fillWidth: true
+                Material.elevation: 2
+
+                ColumnLayout {
+                    anchors.fill: parent
+                    spacing: 0
+
+                    Label {
+                        text: qsTr("Options")
+                        font.pixelSize: 16
+                        font.bold: true
+                    }
+                    Switch {
+                        Layout.fillWidth: true
+                        text: qsTr("Connect to the last adapter when the app starts")
+                        checked: ObdSession.autoConnect
+                        onToggled: ObdSession.autoConnect = checked
+                    }
+                    Switch {
+                        Layout.fillWidth: true
+                        visible: ObdSession.backgroundSupported
+                        text: qsTr("Keep the screen on while connected")
+                        checked: ObdSession.keepScreenOn
+                        onToggled: ObdSession.keepScreenOn = checked
                     }
                 }
             }

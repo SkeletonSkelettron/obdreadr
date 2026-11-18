@@ -140,8 +140,14 @@ Things worth knowing before changing them:
   foreground service from the background, so an automatic reconnect only
   updates the running one. When upgrading Qt, compare `android/AndroidManifest.xml`
   with the new `qtbase/src/android/templates/AndroidManifest.xml`.
-- Settings (QSettings): `wifi/*`, `bt/*`, `sensors/active`, `sensors/pinned`,
-  `view/window`, `view/tab`, `record/all`, `background/enabled`, `fuel/type`,
+- **Starting by itself.** `ConnectPage` calls `connectOnStart()` once per app
+  start; with `connect/auto` it runs `connectLast()`, which follows
+  `connect/last` (`bt`, `wifi` or `demo`, written by each `connect*`).
+  `updateScreenOn()` sets the window's keep-screen-on flag (through
+  `ObdBackground.keepScreenOn`) while connected or reconnecting.
+- Settings (QSettings): `wifi/*`, `bt/*`, `connect/auto`, `connect/last`,
+  `sensors/active`, `sensors/pinned`, `view/window`, `view/tab`,
+  `view/keepScreenOn`, `record/all`, `background/enabled`, `fuel/type`,
   `fuel/engineLiters`, `fuel/correction`, `fuel/total/*`, `fuel/trip/*`,
   `fuel/history`.
 

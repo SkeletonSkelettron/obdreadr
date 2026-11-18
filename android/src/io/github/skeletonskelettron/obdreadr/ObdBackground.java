@@ -12,6 +12,7 @@ import android.os.Build;
 import android.os.PowerManager;
 import android.provider.Settings;
 import android.util.Log;
+import android.view.WindowManager;
 
 // Called from C++ (src/background.cpp) through JNI.
 public final class ObdBackground {
@@ -41,6 +42,18 @@ public final class ObdBackground {
 
     public static void stop(Context context) {
         context.stopService(new Intent(context, ObdService.class));
+    }
+
+    public static void keepScreenOn(Context context, final boolean on) {
+        if (!(context instanceof Activity))
+            return;
+        final Activity activity = (Activity) context;
+        activity.runOnUiThread(() -> {
+            if (on)
+                activity.getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            else
+                activity.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        });
     }
 
     public static boolean batteryRestricted(Context context) {

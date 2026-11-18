@@ -9,7 +9,9 @@ Already done before the pause and committed: multi-PID polling on CAN
 (`ObdSession::pollBatch`, `elm::stripCanHeaders`, `elm::mode01Values`, the
 simulator's second ECU). It has not met a real car yet (see CLAUDE.md, Status).
 
-## 1. Auto-connect on start, keep the screen on
+## 1. Auto-connect on start, keep the screen on — done
+
+Switches on the start page (Options) until the Settings page (10) exists.
 
 - Settings `connect/auto` (default on) and `connect/last` (`bt`, `wifi`,
   `demo`, written by each `connect*`). `Q_INVOKABLE connectLast()` and a

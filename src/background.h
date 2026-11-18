@@ -14,6 +14,10 @@ void start(const QString &title, const QString &text);
 void update(const QString &title, const QString &text);
 void stop();
 
+// Keeps the phone's screen from turning off (the activity window's
+// FLAG_KEEP_SCREEN_ON) while `on`.
+void keepScreenOn(bool on);
+
 // Android's battery optimization may still stop an app in the background on
 // some phones; this asks the user to exempt it.
 bool batteryRestricted();

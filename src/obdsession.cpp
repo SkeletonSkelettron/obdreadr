@@ -83,6 +83,8 @@ ObdSession::ObdSession(QObject *parent)
     m_viewTab = settings.value(QStringLiteral("view/tab"), 0).toInt();
     m_recordAll = settings.value(QStringLiteral("record/all"), true).toBool();
     m_background = settings.value(QStringLiteral("background/enabled"), true).toBool();
+    m_autoConnect = settings.value(QStringLiteral("connect/auto"), true).toBool();
+    m_keepScreenOn = settings.value(QStringLiteral("view/keepScreenOn"), true).toBool();
     refreshRecordings();
 
     connect(m_fuel, &FuelMeter::inputsChanged, this, [this] {
@@ -95,6 +97,7 @@ ObdSession::ObdSession(QObject *parent)
     m_serviceTimer.setInterval(kServiceRefreshMs);
     connect(&m_serviceTimer, &QTimer::timeout, this, &ObdSession::updateService);
     connect(this, &ObdSession::stateChanged, this, &ObdSession::updateService);
+    connect(this, &ObdSession::stateChanged, this, &ObdSession::updateScreenOn);
     m_reconnectTimer.setSingleShot(true);
     connect(&m_reconnectTimer, &QTimer::timeout, this, [this] {
         if (m_lastFactory)
@@ -241,6 +244,7 @@ void ObdSession::setAllSensorsPinned(bool pinned)
 
 void ObdSession::connectDemo()
 {
+    rememberConnection(QStringLiteral("demo"));
     startTransport(tr("Demo car"), [this] { return new SimTransport(this); });
 }
 
@@ -253,7 +257,7 @@ void ObdSession::connectWifi(const QString &host, int port)
     QSettings settings;
     settings.setValue(QStringLiteral("wifi/host"), host.trimmed());
     settings.setValue(QStringLiteral("wifi/port"), port);
-    emit settingsChanged();
+    rememberConnection(QStringLiteral("wifi"));
     const QString h = host.trimmed();
     startTransport(QStringLiteral("%1:%2").arg(h).arg(port),
                    [this, h, port] { return new TcpTransport(h, quint16(port), this); });
@@ -273,7 +277,7 @@ void ObdSession::connectBluetooth(const QString &address, const QString &name, b
         settings.setValue(QStringLiteral("bt/address"), addr.toString());
         settings.setValue(QStringLiteral("bt/name"), name);
         settings.setValue(QStringLiteral("bt/ble"), ble);
-        emit settingsChanged();
+        rememberConnection(QStringLiteral("bt"));
 
         const QString label = name.isEmpty() ? addr.toString() : name;
         if (ble) {
@@ -293,6 +297,71 @@ void ObdSession::connectBluetooth(const QString &address, const QString &name, b
     Q_UNUSED(ble)
     setStatus(tr("This build has no Bluetooth support"));
 #endif
+}
+
+void ObdSession::rememberConnection(const QString &kind)
+{
+    QSettings().setValue(QStringLiteral("connect/last"), kind);
+    emit settingsChanged();
+}
+
+bool ObdSession::connectLast()
+{
+    QString last = QSettings().value(QStringLiteral("connect/last")).toString();
+    if (last.isEmpty() && !lastBtAddress().isEmpty())
+        last = QStringLiteral("bt"); // set up before connect/last existed
+    if (last == QLatin1String("bt") && !lastBtAddress().isEmpty()) {
+        connectBluetooth(lastBtAddress(), lastBtName(), lastBtBle());
+        return true;
+    }
+    if (last == QLatin1String("wifi")) {
+        connectWifi(lastHost(), lastPort());
+        return true;
+    }
+    if (last == QLatin1String("demo")) {
+        connectDemo();
+        return true;
+    }
+    return false;
+}
+
+void ObdSession::connectOnStart()
+{
+    if (m_startConnectDone)
+        return;
+    m_startConnectDone = true;
+    if (m_autoConnect && m_state == Disconnected)
+        connectLast();
+}
+
+void ObdSession::setAutoConnect(bool on)
+{
+    if (m_autoConnect == on)
+        return;
+    m_autoConnect = on;
+    QSettings().setValue(QStringLiteral("connect/auto"), on);
+    emit settingsChanged();
+}
+
+void ObdSession::setKeepScreenOn(bool on)
+{
+    if (m_keepScreenOn == on)
+        return;
+    m_keepScreenOn = on;
+    QSettings().setValue(QStringLiteral("view/keepScreenOn"), on);
+    emit settingsChanged();
+    updateScreenOn();
+}
+
+void ObdSession::updateScreenOn()
+{
+    // While connected or about to reconnect; a lost connection that is not
+    // retried lets the screen go off again.
+    const bool want = m_keepScreenOn && (m_state != Disconnected && (m_state != Failed || reconnecting()));
+    if (want == m_screenKeptOn)
+        return;
+    m_screenKeptOn = want;
+    background::keepScreenOn(want);
 }
 
 void ObdSession::reconnect()

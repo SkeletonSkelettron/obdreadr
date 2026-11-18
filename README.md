@@ -58,6 +58,9 @@ car through an ELM327 OBD-II adapter and draws it as scrolling charts.
   answered, and the measurement and the total carry on. Leaving the dashboard
   disconnects. Some phones also need battery optimization off for the app
   (Fuel tab → Allow running in the background).
+- **Connects by itself.** When the app starts it connects to the adapter
+  used last, and the screen stays on while connected (both switchable under
+  Options on the start page).
 - **Demo car**, a built-in simulated ELM327, for trying the app without a car.
 - Shows the VIN, the protocol and the battery voltage, and keeps a log of the
   conversation with the adapter (⋮ → Log).

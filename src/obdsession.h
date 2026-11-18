@@ -77,6 +77,8 @@ class ObdSession : public QObject
     Q_PROPERTY(bool background READ background WRITE setBackground NOTIFY backgroundChanged)
     Q_PROPERTY(bool batteryRestricted READ batteryRestricted NOTIFY backgroundChanged)
     Q_PROPERTY(bool reconnecting READ reconnecting NOTIFY stateChanged)
+    Q_PROPERTY(bool autoConnect READ autoConnect WRITE setAutoConnect NOTIFY settingsChanged)
+    Q_PROPERTY(bool keepScreenOn READ keepScreenOn WRITE setKeepScreenOn NOTIFY settingsChanged)
 
 public:
     enum State { Disconnected, Connecting, Initializing, Discovering, Running, Failed };
@@ -140,6 +142,18 @@ public:
     bool reconnecting() const { return m_reconnectTimer.isActive(); }
     // Asks Android to stop optimizing the app's battery use.
     Q_INVOKABLE void allowBackground();
+
+    // Connecting by itself: the last adapter when the app starts (setting
+    // `connect/auto`), and the screen kept on while connected
+    // (`view/keepScreenOn`).
+    bool autoConnect() const { return m_autoConnect; }
+    void setAutoConnect(bool on);
+    bool keepScreenOn() const { return m_keepScreenOn; }
+    void setKeepScreenOn(bool on);
+    // Connects to the adapter used last (`connect/last`); false if there is none.
+    Q_INVOKABLE bool connectLast();
+    // Called when the start page appears; connects once per app start.
+    Q_INVOKABLE void connectOnStart();
 
     Q_INVOKABLE void startScan();
     Q_INVOKABLE void stopScan();
@@ -222,6 +236,8 @@ private:
     void updateService();
     void stopService();
     void scheduleReconnect();
+    void rememberConnection(const QString &kind);
+    void updateScreenOn();
     void startRecording();
     void stopRecording();
     void discoverTests(quint8 baseMid);
@@ -238,6 +254,10 @@ private:
     QTimer m_serviceTimer;   // refreshes the notification
     QTimer m_reconnectTimer;
     QElapsedTimer m_sinceData; // since the car last answered, for giving up on reconnecting
+    bool m_autoConnect = true;
+    bool m_startConnectDone = false;
+    bool m_keepScreenOn = true;
+    bool m_screenKeptOn = false;
 
     void withBluetoothPermission(std::function<void()> action);
 #ifdef OBD_HAVE_BLUETOOTH
