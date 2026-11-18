@@ -41,19 +41,29 @@ from a real car yet. Things most likely to need a fix once tried:
 - **Mode 06 scaling** of rarer unit/scaling IDs (`src/obd/monitors.cpp`);
   pass/fail is computed on raw values, so only the displayed numbers could be off.
 - **Health check limits** (`src/health.cpp`) are general rules of thumb.
-- **Background service** (`android/`, `src/background.cpp`): never run on a
-  phone. Check that polling goes on with the screen off (Qt's event loop keeps
-  running because of `android.app.background_running` in the manifest), that
-  the notification appears (Android 13+ asks for the permission on the first
-  connection) and that an automatic reconnect works. Phones with aggressive
-  battery savers may still need "unrestricted" battery for the app.
+  The owner's car (2.0 l petrol, CAN, ~650 rpm warm idle) has smart charging:
+  the alternator rests at 11.8–12.3 V for up to 14 minutes and charges at
+  14.4 V mostly while coasting, so `charging()` only calls a low voltage a
+  fault after 10 minutes without any reading of 13.8 V or more, or under
+  11.5 V, and `alerts::Monitor` alerts after 15 minutes without charging or
+  20 s under 11.5 V. Voltage was read only every ~27 s there, so checks must not need
+  readings closer together than that (replaying the CSV files through
+  `health::evaluate` found the earlier 3-readings-in-30-s rule never gave a
+  verdict).
+- **Background service** (`android/`, `src/background.cpp`): the 18 Nov 2026
+  recordings (65 and 39 minutes) have no gaps, so polling goes on with the
+  screen off. Not reported yet: whether the notification appears and whether
+  an automatic reconnect works.
 - **Several PIDs per request** (`ObdSession::pollBatch`, `elm::stripCanHeaders`):
   never met a real car. On CAN the session turns headers on (`ATH1`) after
   `ATDPN`, and every answer is converted back to the header-less format, so
   if a real adapter prints headers differently, single polls could break too.
   The first real-car recording (17 Nov 2026, before this) showed ~6 requests/s
   for 34 sensors, so each sensor every ~3 s; the demo car went from ~24 to ~95
-  readings/s.
+  readings/s. The 18 Nov recordings still show ~6.7 readings/s and not one
+  combined reading (those share a timestamp): either the phone had v0.4.0 or
+  the car refused; the Log says which ("Polling started, up to 6 sensors per
+  request" / "Requests for several sensors failed").
 - **Fuel estimates** (`src/fuel.cpp`): the MAF and speed-density ones ignore
   deceleration fuel cut-off, so they read a little high; the correction
   setting is there for that. Speed-density assumes 85 % volumetric efficiency.

@@ -3,6 +3,8 @@
 #include <QCoreApplication>
 #include <QLocale>
 
+#include <algorithm>
+
 namespace alerts {
 
 namespace {
@@ -43,6 +45,10 @@ QList<Alert> Monitor::addReading(int pid, double t, double value)
     case kRpmPid:
         m_rpm = value;
         m_rpmAt = t;
+        if (value > 500 && m_runningSince < 0)
+            m_runningSince = t;
+        else if (value < 300)
+            m_runningSince = -1;
         if (m_rpmLimit > 0) {
             if (value >= m_rpmLimit) {
                 if (fire(m_rpmTrigger, t, kRpmCooldown))
@@ -87,18 +93,32 @@ void Monitor::voltage(QList<Alert> &out, double t, double volts)
 {
     const bool running = t - m_rpmAt <= 5 && m_rpm > 500;
 
-    // Not charging: low voltage with the engine running, for a while.
-    if (running && volts < kChargingLow) {
-        if (m_charging.since < 0)
-            m_charging.since = t;
-        if (t - m_charging.since >= kChargingSeconds && fire(m_charging, t, kCooldown))
+    if (running && volts >= kChargedVolts) {
+        m_lastCharge = t;
+        m_charging.active = false;
+    }
+
+    // Not charging: no charging voltage at all for 15 minutes of running.
+    if (running && volts < kNotChargingVolts && m_runningSince >= 0) {
+        const double since = std::max(m_lastCharge, m_runningSince);
+        if (t - since >= kNoChargeSeconds && fire(m_charging, t, kCooldown))
             out << Alert{QStringLiteral("charging"), QCoreApplication::translate("Alerts", "Battery not charging"),
-                         QCoreApplication::translate("Alerts", "%1 V with the engine running: the alternator or its belt may have failed. The car now runs on the battery.")
+                         QCoreApplication::translate("Alerts", "No charging for %1 minutes with the engine running (%2 V): the alternator or its belt may have failed, and the car runs on the battery.")
+                             .arg(num((t - since) / 60, 0), num(volts, 1))};
+    }
+
+    // Drained: whatever the charging strategy, this low means trouble.
+    if (running && volts < kDrainedVolts) {
+        if (m_drained.since < 0)
+            m_drained.since = t;
+        if (t - m_drained.since >= kDrainedSeconds && fire(m_drained, t, kCooldown))
+            out << Alert{QStringLiteral("battery"), QCoreApplication::translate("Alerts", "Battery voltage low"),
+                         QCoreApplication::translate("Alerts", "%1 V with the engine running: the battery is being drained. Check the alternator, its belt and the battery.")
                              .arg(num(volts, 1))};
     } else {
-        m_charging.since = -1;
-        if (volts > kChargingClear)
-            m_charging.active = false;
+        m_drained.since = -1;
+        if (volts > kDrainedClear)
+            m_drained.active = false;
     }
 
     // Overcharging, whatever the engine does.

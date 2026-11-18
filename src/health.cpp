@@ -62,6 +62,9 @@ constexpr int kRunTime = 0x1F;
 constexpr int kModuleVoltage = 0x42;
 constexpr int kAmbient = 0x46;
 
+constexpr double kChargingWindow = 15 * 60; // as much history as a series keeps
+constexpr double kNowWindow = 120;
+
 class Evaluator
 {
 public:
@@ -191,29 +194,62 @@ private:
         if (!voltage || !voltage->hasValue())
             return noData(title, QCoreApplication::translate("Health", "Needs the battery voltage (control module voltage or the adapter's reading)."));
 
-        std::vector<double> engineRunning;
-        std::vector<double> engineOff;
-        for (const auto &sample : recent(voltage, 30)) {
+        // Many newer cars charge "smartly": the engine computer switches the
+        // alternator off under load and at idle (the battery alone gives
+        // 12.0-12.6 V) and on while coasting or when the battery needs it. So
+        // a low voltage is only a fault when charging has not been seen for a
+        // long time, or when the battery sags far while the alternator rests.
+        // With many sensors the voltage may be read only every half minute,
+        // so "now" is its last few readings of the last two minutes.
+        std::vector<SensorSeries::Sample> engineRunning; // the last 15 minutes
+        std::vector<double> engineOff;                   // the last 2 minutes
+        for (const auto &sample : recent(voltage, kChargingWindow)) {
             const auto rpm = at(m_rpm, sample.t, 5);
             if (rpm && *rpm > 400)
-                engineRunning.push_back(sample.v);
-            else if (rpm)
+                engineRunning.push_back(sample);
+            else if (rpm && sample.t >= m_now - kNowWindow)
                 engineOff.push_back(sample.v);
         }
-        if (engineRunning.size() >= 3) {
-            const double v = median(engineRunning);
-            const QString value = num(v, 2) + QStringLiteral(" V");
-            if (v < 13.0)
-                return {title, Status::Bad, value, QCoreApplication::translate("Health", "The alternator does not seem to charge: a running engine should give 13.5–14.8 V. Check the alternator, its belt and the battery terminals.")};
-            if (v < 13.5)
-                return {title, Status::Warn, value, QCoreApplication::translate("Health", "Charging voltage is on the low side (13.5–14.8 V is normal). Some newer cars lower it on purpose while cruising.")};
-            if (v <= 14.9)
-                return {title, Status::Ok, value, QCoreApplication::translate("Health", "Normal charging voltage with the engine running (13.5–14.8 V).")};
-            if (v <= 15.3)
-                return {title, Status::Warn, value, QCoreApplication::translate("Health", "Charging voltage is a little high. Watch it; it can be normal on a cold battery.")};
-            return {title, Status::Bad, value, QCoreApplication::translate("Health", "Overcharging: the voltage regulator may be faulty, which damages the battery.")};
+        std::vector<double> runningNow;
+        for (auto it = engineRunning.rbegin(); it != engineRunning.rend() && runningNow.size() < 5; ++it) {
+            if (it->t >= m_now - kNowWindow)
+                runningNow.push_back(it->v);
         }
-        if (engineOff.size() >= 3) {
+        if (runningNow.size() >= 2) {
+            const double v = median(runningNow);
+            const QString value = num(v, 2) + QStringLiteral(" V");
+            if (v > 15.3)
+                return {title, Status::Bad, value, QCoreApplication::translate("Health", "Overcharging: the voltage regulator may be faulty, which damages the battery.")};
+            if (v > 14.9)
+                return {title, Status::Warn, value, QCoreApplication::translate("Health", "Charging voltage is a little high. Watch it; it can be normal on a cold battery.")};
+            if (v >= 13.5)
+                return {title, Status::Ok, value, QCoreApplication::translate("Health", "Normal charging voltage with the engine running (13.5–14.8 V).")};
+            if (v >= 13.0)
+                return {title, Status::Ok, value, QCoreApplication::translate("Health", "Lowered charging voltage (13.0–13.5 V), as newer cars give while cruising with a charged battery.")};
+
+            // Not charging at the moment.
+            double charged = 0;
+            std::vector<double> resting;
+            for (const auto &sample : engineRunning) {
+                charged = std::max(charged, sample.v);
+                if (sample.v < 13.0)
+                    resting.push_back(sample.v);
+            }
+            const double rest = median(resting);
+            const double minutes = (engineRunning.back().t - engineRunning.front().t) / 60.0;
+            const QString restValue = num(rest, 2) + QStringLiteral(" V");
+            if (rest < 11.5)
+                return {title, Status::Bad, restValue, QCoreApplication::translate("Health", "The voltage falls to %1 with the engine running, so the battery is being drained. Check the alternator, its belt and the battery.").arg(restValue)};
+            if (charged >= 13.8) {
+                if (rest < 11.9)
+                    return {title, Status::Warn, restValue, QCoreApplication::translate("Health", "Smart charging: the alternator rests and charges by turns (last at %1 V), but while it rests the battery sags to %2. The battery may be weak or not fully charged; have it tested.").arg(num(charged, 1), restValue)};
+                return {title, Status::Ok, value, QCoreApplication::translate("Health", "Smart charging: the engine computer switches the alternator off under load and on while coasting. It charged at %1 V within the last minutes; %2 while it rests is normal.").arg(num(charged, 1), value)};
+            }
+            if (minutes >= 10)
+                return {title, Status::Warn, value, QCoreApplication::translate("Health", "No charging for %1 minutes with the engine running. Smart charging rarely rests this long; if it stays like this, check the alternator, its belt and the battery.").arg(num(minutes, 0))};
+            return {title, Status::Info, value, QCoreApplication::translate("Health", "Not charging at the moment. Many newer cars switch the alternator off for minutes at a time; this check waits up to 10 minutes before calling it a fault.")};
+        }
+        if (engineOff.size() >= 2) {
             const double v = median(engineOff);
             const QString value = num(v, 2) + QStringLiteral(" V");
             if (v >= 12.4)

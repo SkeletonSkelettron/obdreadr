@@ -77,8 +77,6 @@ T = {
     "Low fuel": "საწვავი ცოტაა",
     "%1 % left in the tank.": "ავზში %1 % დარჩა.",
     "Battery not charging": "აკუმულატორი არ იმუხტება",
-    "%1 V with the engine running: the alternator or its belt may have failed. The car now runs on the battery.":
-        "ჩართულ ძრავზე %1 V: შესაძლოა გენერატორი ან მისი ღვედი მწყობრიდან გამოვიდა. მანქანა ახლა აკუმულატორზე მუშაობს.",
     "Charging voltage too high": "დამუხტვის ძაბვა ძალიან მაღალია",
     "%1 V: the voltage regulator may be faulty, which harms the battery and electronics.":
         "%1 V: შესაძლოა ძაბვის რეგულატორი გაფუჭდა, რაც აკუმულატორს და ელექტრონიკას აზიანებს.",
@@ -268,10 +266,6 @@ T = {
     "Battery and charging": "აკუმულატორი და დამუხტვა",
     "Needs the battery voltage (control module voltage or the adapter's reading).":
         "საჭიროა აკუმულატორის ძაბვა (მართვის ბლოკის ძაბვა ან ადაპტერის ჩვენება).",
-    "The alternator does not seem to charge: a running engine should give 13.5–14.8 V. Check the alternator, its belt and the battery terminals.":
-        "როგორც ჩანს, გენერატორი არ მუხტავს: ჩართულ ძრავზე 13.5–14.8 V უნდა იყოს. შეამოწმეთ გენერატორი, მისი ღვედი და აკუმულატორის კლემები.",
-    "Charging voltage is on the low side (13.5–14.8 V is normal). Some newer cars lower it on purpose while cruising.":
-        "დამუხტვის ძაბვა დაბალია (ნორმაა 13.5–14.8 V). ზოგი ახალი მანქანა თანაბარ მოძრაობაში მას განზრახ ამცირებს.",
     "Normal charging voltage with the engine running (13.5–14.8 V).": "ჩართულ ძრავზე დამუხტვის ძაბვა ნორმაშია (13.5–14.8 V).",
     "Charging voltage is a little high. Watch it; it can be normal on a cold battery.":
         "დამუხტვის ძაბვა ოდნავ მაღალია. დააკვირდით; ცივ აკუმულატორზე ეს შეიძლება ნორმალური იყოს.",
@@ -693,4 +687,23 @@ T = {
     "The car's own measurements of its emission parts, each with the limit at which it would set a fault code. A value close to its limit shows a part that is wearing out before any code. Misfire counts per cylinder show misfires too rare for a code.":
         "მანქანის საკუთარი გაზომვები გამონაბოლქვის ნაწილებზე, თითოეული იმ ზღვრით, რომელზეც შეცდომის კოდს დააყენებდა. ზღვართან ახლოს მყოფი მნიშვნელობა აჩვენებს ნაწილს, რომელიც კოდამდე ცვდება. ცილინდრების მიხედვით გამოტოვებები აჩვენებს იმდენად იშვიათ გამოტოვებებს, რომ კოდისთვის არ კმარა.",
     "Connect to the car to read the test results.": "ტესტის შედეგების წასაკითხად დაუკავშირდით მანქანას.",
+
+    # --- Smart charging (18 Nov 2026) -----------------------------------------
+    "Lowered charging voltage (13.0–13.5 V), as newer cars give while cruising with a charged battery.":
+        "შემცირებული დამუხტვის ძაბვა (13.0–13.5 V), როგორც ახალ მანქანებს აქვთ დამუხტული აკუმულატორით მოძრაობისას.",
+    "The voltage falls to %1 with the engine running, so the battery is being drained. Check the alternator, its belt and the battery.":
+        "ჩართულ ძრავზე ძაბვა %1-მდე ეცემა, ანუ აკუმულატორი იცლება. შეამოწმეთ გენერატორი, მისი ღვედი და აკუმულატორი.",
+    "Smart charging: the alternator rests and charges by turns (last at %1 V), but while it rests the battery sags to %2. The battery may be weak or not fully charged; have it tested.":
+        "ჭკვიანი დამუხტვა: გენერატორი მონაცვლეობით ისვენებს და მუხტავს (ბოლოს %1 V-ით), მაგრამ დასვენებისას აკუმულატორის ძაბვა %2-მდე ეცემა. აკუმულატორი შეიძლება სუსტი ან ბოლომდე დაუმუხტავი იყოს; შეამოწმეთ.",
+    "Smart charging: the engine computer switches the alternator off under load and on while coasting. It charged at %1 V within the last minutes; %2 while it rests is normal.":
+        "ჭკვიანი დამუხტვა: ძრავის კომპიუტერი გენერატორს დატვირთვისას თიშავს, გაზის გარეშე მოძრაობისას კი რთავს. ბოლო წუთებში %1 V-ით დამუხტა; დასვენებისას %2 ნორმაა.",
+    "No charging for %1 minutes with the engine running. Smart charging rarely rests this long; if it stays like this, check the alternator, its belt and the battery.":
+        "ჩართულ ძრავზე %1 წუთია დამუხტვა არ ყოფილა. ჭკვიანი დამუხტვა ამდენ ხანს იშვიათად ისვენებს; თუ ასე გაგრძელდა, შეამოწმეთ გენერატორი, მისი ღვედი და აკუმულატორი.",
+    "Not charging at the moment. Many newer cars switch the alternator off for minutes at a time; this check waits up to 10 minutes before calling it a fault.":
+        "ამ წუთას არ იმუხტება. ბევრი ახალი მანქანა გენერატორს რამდენიმე წუთით თიშავს; ეს შემოწმება გაუმართაობად 10 წუთის შემდეგ ჩათვლის.",
+    "No charging for %1 minutes with the engine running (%2 V): the alternator or its belt may have failed, and the car runs on the battery.":
+        "ჩართულ ძრავზე %1 წუთია დამუხტვა არ ყოფილა (%2 V): შესაძლოა გენერატორი ან მისი ღვედი მწყობრიდან გამოვიდა და მანქანა აკუმულატორზე მუშაობს.",
+    "Battery voltage low": "აკუმულატორის ძაბვა დაბალია",
+    "%1 V with the engine running: the battery is being drained. Check the alternator, its belt and the battery.":
+        "ჩართულ ძრავზე %1 V: აკუმულატორი იცლება. შეამოწმეთ გენერატორი, მისი ღვედი და აკუმულატორი.",
 }

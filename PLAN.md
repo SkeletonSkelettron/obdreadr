@@ -33,8 +33,15 @@ Switch and engine speed limit on the Settings page.
   returns alerts {key, title, text}. Each alert fires once, clears with
   hysteresis, then may fire again after a cooldown (5 min; rpm 30 s).
   - Coolant (PID 05) >= 108 °C, clears below 103.
-  - Not charging: engine running (rpm > 500) and voltage (PID 42, else ATRV)
-    < 12.8 V for 20 s; clears above 13.2. Overcharging: > 15.3 V for 10 s.
+  - Not charging. The owner's car has smart charging (18 Nov 2026
+    recordings): the alternator rests at 11.8–12.3 V for up to 14 minutes and
+    charges at 14.4 V mostly while coasting. Since v0.5.1 the alert fires only
+    when, with the engine running, no reading reached 13.8 V for 15 minutes
+    ("charging"), or the voltage stays under 11.5 V for 20 s ("battery",
+    drained), like `charging()` in `src/health.cpp`. v0.5.0's 12.8 V for 20 s
+    would have raised 9 false alarms on that morning's drive. Overcharging:
+    > 15.3 V for 10 s. The voltage may be read only every ~30 s, so no rule
+    may need readings closer together than that.
   - Check engine light turned on or the code count went up: poll `0101`
     every 60 s while Running (byte A: bit 7 MIL, bits 0–6 count).
   - Engine speed >= a user limit (setting `alerts/rpm`, 0 = off).

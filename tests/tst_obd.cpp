@@ -15,6 +15,7 @@
 #include "sensorseries.h"
 
 #include <algorithm>
+#include <functional>
 
 #include <QDir>
 #include <QFileInfo>
@@ -403,7 +404,8 @@ private slots:
             }
             return health::Status::NoData;
         };
-        QCOMPARE(status(QStringLiteral("Battery and charging")), health::Status::Bad);  // 12.8 V running
+        // 12.8 V running for a minute: maybe smart charging resting, wait and see.
+        QCOMPARE(status(QStringLiteral("Battery and charging")), health::Status::Info);
         QCOMPARE(status(QStringLiteral("Fuel trim, bank 1")), health::Status::Bad);     // +18 %
         QCOMPARE(status(QStringLiteral("Idle")), health::Status::Bad);                  // 700/860 rpm
         QCOMPARE(status(QStringLiteral("Engine temperature")), health::Status::Ok);
@@ -411,6 +413,38 @@ private slots:
         // Bank 2 is absent, so it has no check at all.
         QVERIFY(std::none_of(checks.begin(), checks.end(),
                              [](const health::Check &c) { return c.title == QLatin1String("Fuel trim, bank 2"); }));
+    }
+
+    void checksSmartCharging()
+    {
+        // 15 minutes of a running engine; `volts(t)` gives the voltage.
+        const auto verdict = [](const std::function<double(int)> &volts) {
+            SensorSeries rpm(QStringLiteral("rpm"), QString(), 0, 0, 8000, Qt::white, nullptr);
+            SensorSeries voltage(QStringLiteral("voltage"), QString(), 2, 0, 16, Qt::white, nullptr);
+            for (int t = 0; t <= 900; t += 2) {
+                rpm.append(t, 1200);
+                voltage.append(t, volts(t));
+            }
+            const health::Lookup lookup = [&](int pid) -> const SensorSeries * {
+                return pid == 0x0C ? &rpm : pid == 0x42 ? &voltage : nullptr;
+            };
+            for (const health::Check &c : health::evaluate(lookup, 900)) {
+                if (c.title == QLatin1String("Battery and charging"))
+                    return c.status;
+            }
+            return health::Status::NoData;
+        };
+        // As on the owner's car on 18 Nov 2026: charging while coasting, 12.1 V between.
+        const auto smart = [](double rest) {
+            return [rest](int t) { return t % 300 < 60 ? 14.4 : rest; };
+        };
+        QCOMPARE(verdict(smart(12.1)), health::Status::Ok);
+        QCOMPARE(verdict(smart(11.8)), health::Status::Warn); // the battery sags while resting
+        QCOMPARE(verdict(smart(11.2)), health::Status::Bad);  // drained
+        QCOMPARE(verdict([](int) { return 12.1; }), health::Status::Warn); // never charges
+        QCOMPARE(verdict([](int) { return 13.2; }), health::Status::Ok);   // lowered voltage
+        QCOMPARE(verdict([](int) { return 14.3; }), health::Status::Ok);
+        QCOMPARE(verdict([](int) { return 15.6; }), health::Status::Bad);
     }
 
     void estimatesFuelFlow()
@@ -902,16 +936,34 @@ private slots:
 
     void alertsOnCharging()
     {
-        alerts::Monitor monitor;
-        QList<alerts::Alert> raised;
-        for (int t = 0; t <= 25; ++t) {
-            raised << monitor.addReading(0x0C, t, 800);
-            raised << monitor.addReading(0x42, t, 12.5);
-        }
-        QCOMPARE(raised.size(), 1); // after 20 s, once
+        // Engine speed every 3 s, the voltage every 27 s, as on the owner's car.
+        const auto drive = [](alerts::Monitor &monitor, int seconds, const std::function<double(int)> &volts) {
+            QList<alerts::Alert> raised;
+            for (int t = 0; t <= seconds; t += 3) {
+                raised << monitor.addReading(0x0C, t, 1200);
+                if (t % 27 == 0)
+                    raised << monitor.addReading(0x42, t, volts(t));
+            }
+            return raised;
+        };
+        // Smart charging (the 18 Nov 2026 morning): 14.4 V while coasting,
+        // 12.1 V between, for an hour: no alert.
+        alerts::Monitor smart;
+        QVERIFY(drive(smart, 3600, [](int t) { return t % 600 < 60 ? 14.4 : 12.1; }).isEmpty());
+
+        // Never charging: once, after 15 minutes.
+        alerts::Monitor dead;
+        QList<alerts::Alert> raised = drive(dead, 1800, [](int) { return 12.2; });
+        QCOMPARE(raised.size(), 1);
         QCOMPARE(raised[0].key, QStringLiteral("charging"));
         // The adapter's reading is ignored once the car reports its voltage.
-        QVERIFY(monitor.addReading(-1, 26, 16.0).isEmpty());
+        QVERIFY(dead.addReading(-1, 1801, 16.0).isEmpty());
+
+        // Drained under 11.5 V: after 20 s, even with smart charging.
+        alerts::Monitor drained;
+        raised = drive(drained, 120, [](int) { return 11.2; });
+        QCOMPARE(raised.size(), 1);
+        QCOMPARE(raised[0].key, QStringLiteral("battery"));
 
         // With the engine off a low voltage is no alert.
         alerts::Monitor parked;

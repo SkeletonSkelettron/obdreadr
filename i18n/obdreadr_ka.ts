@@ -87,10 +87,6 @@
         <translation>აკუმულატორი არ იმუხტება</translation>
     </message>
     <message>
-        <source>%1 V with the engine running: the alternator or its belt may have failed. The car now runs on the battery.</source>
-        <translation>ჩართულ ძრავზე %1 V: შესაძლოა გენერატორი ან მისი ღვედი მწყობრიდან გამოვიდა. მანქანა ახლა აკუმულატორზე მუშაობს.</translation>
-    </message>
-    <message>
         <source>Charging voltage too high</source>
         <translation>დამუხტვის ძაბვა ძალიან მაღალია</translation>
     </message>
@@ -113,6 +109,18 @@
     <message>
         <source>The car stored another fault code. Open Diagnostics to read it.</source>
         <translation>მანქანამ კიდევ ერთი შეცდომის კოდი შეინახა. წასაკითხად გახსენით დიაგნოსტიკა.</translation>
+    </message>
+    <message>
+        <source>No charging for %1 minutes with the engine running (%2 V): the alternator or its belt may have failed, and the car runs on the battery.</source>
+        <translation>ჩართულ ძრავზე %1 წუთია დამუხტვა არ ყოფილა (%2 V): შესაძლოა გენერატორი ან მისი ღვედი მწყობრიდან გამოვიდა და მანქანა აკუმულატორზე მუშაობს.</translation>
+    </message>
+    <message>
+        <source>Battery voltage low</source>
+        <translation>აკუმულატორის ძაბვა დაბალია</translation>
+    </message>
+    <message>
+        <source>%1 V with the engine running: the battery is being drained. Check the alternator, its belt and the battery.</source>
+        <translation>ჩართულ ძრავზე %1 V: აკუმულატორი იცლება. შეამოწმეთ გენერატორი, მისი ღვედი და აკუმულატორი.</translation>
     </message>
 </context>
 <context>
@@ -855,14 +863,6 @@ Switch the engine off and leave the ignition on.</source>
         <translation>საჭიროა აკუმულატორის ძაბვა (მართვის ბლოკის ძაბვა ან ადაპტერის ჩვენება).</translation>
     </message>
     <message>
-        <source>The alternator does not seem to charge: a running engine should give 13.5–14.8 V. Check the alternator, its belt and the battery terminals.</source>
-        <translation>როგორც ჩანს, გენერატორი არ მუხტავს: ჩართულ ძრავზე 13.5–14.8 V უნდა იყოს. შეამოწმეთ გენერატორი, მისი ღვედი და აკუმულატორის კლემები.</translation>
-    </message>
-    <message>
-        <source>Charging voltage is on the low side (13.5–14.8 V is normal). Some newer cars lower it on purpose while cruising.</source>
-        <translation>დამუხტვის ძაბვა დაბალია (ნორმაა 13.5–14.8 V). ზოგი ახალი მანქანა თანაბარ მოძრაობაში მას განზრახ ამცირებს.</translation>
-    </message>
-    <message>
         <source>Normal charging voltage with the engine running (13.5–14.8 V).</source>
         <translation>ჩართულ ძრავზე დამუხტვის ძაბვა ნორმაშია (13.5–14.8 V).</translation>
     </message>
@@ -1181,6 +1181,30 @@ Switch the engine off and leave the ignition on.</source>
     <message>
         <source>Intake air stays close to the outside temperature while driving.</source>
         <translation>სვლისას შემავალი ჰაერი გარე ტემპერატურასთან ახლოს რჩება.</translation>
+    </message>
+    <message>
+        <source>Lowered charging voltage (13.0–13.5 V), as newer cars give while cruising with a charged battery.</source>
+        <translation>შემცირებული დამუხტვის ძაბვა (13.0–13.5 V), როგორც ახალ მანქანებს აქვთ დამუხტული აკუმულატორით მოძრაობისას.</translation>
+    </message>
+    <message>
+        <source>The voltage falls to %1 with the engine running, so the battery is being drained. Check the alternator, its belt and the battery.</source>
+        <translation>ჩართულ ძრავზე ძაბვა %1-მდე ეცემა, ანუ აკუმულატორი იცლება. შეამოწმეთ გენერატორი, მისი ღვედი და აკუმულატორი.</translation>
+    </message>
+    <message>
+        <source>Smart charging: the alternator rests and charges by turns (last at %1 V), but while it rests the battery sags to %2. The battery may be weak or not fully charged; have it tested.</source>
+        <translation>ჭკვიანი დამუხტვა: გენერატორი მონაცვლეობით ისვენებს და მუხტავს (ბოლოს %1 V-ით), მაგრამ დასვენებისას აკუმულატორის ძაბვა %2-მდე ეცემა. აკუმულატორი შეიძლება სუსტი ან ბოლომდე დაუმუხტავი იყოს; შეამოწმეთ.</translation>
+    </message>
+    <message>
+        <source>Smart charging: the engine computer switches the alternator off under load and on while coasting. It charged at %1 V within the last minutes; %2 while it rests is normal.</source>
+        <translation>ჭკვიანი დამუხტვა: ძრავის კომპიუტერი გენერატორს დატვირთვისას თიშავს, გაზის გარეშე მოძრაობისას კი რთავს. ბოლო წუთებში %1 V-ით დამუხტა; დასვენებისას %2 ნორმაა.</translation>
+    </message>
+    <message>
+        <source>No charging for %1 minutes with the engine running. Smart charging rarely rests this long; if it stays like this, check the alternator, its belt and the battery.</source>
+        <translation>ჩართულ ძრავზე %1 წუთია დამუხტვა არ ყოფილა. ჭკვიანი დამუხტვა ამდენ ხანს იშვიათად ისვენებს; თუ ასე გაგრძელდა, შეამოწმეთ გენერატორი, მისი ღვედი და აკუმულატორი.</translation>
+    </message>
+    <message>
+        <source>Not charging at the moment. Many newer cars switch the alternator off for minutes at a time; this check waits up to 10 minutes before calling it a fault.</source>
+        <translation>ამ წუთას არ იმუხტება. ბევრი ახალი მანქანა გენერატორს რამდენიმე წუთით თიშავს; ეს შემოწმება გაუმართაობად 10 წუთის შემდეგ ჩათვლის.</translation>
     </message>
 </context>
 <context>

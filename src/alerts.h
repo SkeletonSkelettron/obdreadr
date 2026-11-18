@@ -4,14 +4,17 @@
 #include <QString>
 
 // Warnings while driving: an overheating engine, an alternator that stopped
-// charging or overcharges, the check engine light coming on, an engine speed
-// limit and low fuel. Fed every reading; each alert fires once, clears when
+// charging or overcharges, a battery being drained, the check engine light
+// coming on, an engine speed limit and low fuel. Cars with smart charging
+// rest the alternator for many minutes (the battery alone gives 11.8-12.3 V)
+// and charge mostly while coasting, so "not charging" means no charging
+// voltage at all for 15 minutes of running. Fed every reading; each alert fires once, clears when
 // the value is back well inside its limit (hysteresis) and may fire again
 // only after a cooldown.
 namespace alerts {
 
 struct Alert {
-    QString key;   // "coolant", "charging", "overcharging", "mil", "rpm", "fuel"
+    QString key;   // "coolant", "charging", "battery", "overcharging", "mil", "rpm", "fuel"
     QString title;
     QString text;
 };
@@ -37,9 +40,12 @@ public:
 
     static constexpr double kCoolantHot = 108;
     static constexpr double kCoolantClear = 103;
-    static constexpr double kChargingLow = 12.8;
-    static constexpr double kChargingClear = 13.2;
-    static constexpr double kChargingSeconds = 20;
+    static constexpr double kChargedVolts = 13.8;      // the alternator charges
+    static constexpr double kNotChargingVolts = 13.0;
+    static constexpr double kNoChargeSeconds = 15 * 60;
+    static constexpr double kDrainedVolts = 11.5;      // the battery is being drained
+    static constexpr double kDrainedClear = 12.0;
+    static constexpr double kDrainedSeconds = 20;
     static constexpr double kOverchargeHigh = 15.3;
     static constexpr double kOverchargeClear = 15.0;
     static constexpr double kOverchargeSeconds = 10;
@@ -61,9 +67,12 @@ private:
     double m_rpmLimit = 0;
     double m_rpm = 0;
     double m_rpmAt = -1e9;
+    double m_runningSince = -1;   // the engine started (or the connection did)
+    double m_lastCharge = -1e9;   // the last charging voltage with it running
     bool m_moduleVoltage = false; // PID 42 seen: ignore the adapter's reading
     Trigger m_coolant;
     Trigger m_charging;
+    Trigger m_drained;
     Trigger m_overcharging;
     Trigger m_rpmTrigger;
     bool m_fuelFired = false;
