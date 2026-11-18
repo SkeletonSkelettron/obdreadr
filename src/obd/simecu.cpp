@@ -146,6 +146,9 @@ QString SimEcu::obdCommand(const QString &cmd, double t)
         return prefix + mode01(pids, t);
     }
 
+    if (mode == 0x02)
+        return prefix + freezeFrameAnswer(pid, cmd.size() >= 6 ? quint8(cmd.mid(4, 2).toInt(nullptr, 16)) : 0);
+
     if (mode == 0x09 && pid == 0x02)
         return prefix + canAnswer(bytes({0x49, 0x02, 0x01}) + vin().toLatin1());
 
@@ -305,6 +308,35 @@ QString SimEcu::testsAnswer(quint8 mid) const
                           r.max >> 8, r.max & 0xFF});
     }
     return canAnswer(payload);
+}
+
+QString SimEcu::freezeFrameAnswer(quint8 pid, quint8 frame) const
+{
+    if (frame != 0 || !m_stored.contains(0x0133))
+        return QStringLiteral("NO DATA");
+    static const QList<quint8> kPids = {0x02, 0x04, 0x05, 0x06, 0x07, 0x0B, 0x0C, 0x0D, 0x0F, 0x11};
+    QByteArray data;
+    switch (pid) {
+    case 0x00: {
+        quint32 mask = 0;
+        for (quint8 p : kPids)
+            mask |= 0x80000000u >> (p - 1);
+        data = bytes({int(mask >> 24), int((mask >> 16) & 0xFF), int((mask >> 8) & 0xFF), int(mask & 0xFF)});
+        break;
+    }
+    case 0x02: data = bytes({0x01, 0x33}); break;                     // P0133
+    case 0x04: data = bytes({u8(46 * 255 / 100.0)}); break;            // load 46 %
+    case 0x05: data = bytes({91 + 40}); break;                         // coolant 91 °C
+    case 0x06: data = bytes({u8((2 + 100) * 128 / 100.0)}); break;     // short trim +2 %
+    case 0x07: data = bytes({u8((9 + 100) * 128 / 100.0)}); break;     // long trim +9 %
+    case 0x0B: data = bytes({52}); break;                              // 52 kPa
+    case 0x0C: data = u16(2240 * 4); break;                            // 2240 rpm
+    case 0x0D: data = bytes({64}); break;                              // 64 km/h
+    case 0x0F: data = bytes({24 + 40}); break;                         // intake air 24 °C
+    case 0x11: data = bytes({u8(18 * 255 / 100.0)}); break;            // throttle 18 %
+    default: return QStringLiteral("NO DATA");
+    }
+    return canAnswer(bytes({0x42, pid, frame}) + data);
 }
 
 QString SimEcu::codesAnswer(quint8 service, const QList<quint16> &codes) const

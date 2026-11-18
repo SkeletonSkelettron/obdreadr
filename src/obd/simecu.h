@@ -41,6 +41,8 @@ private:
     QString canAnswer(const QByteArray &payload) const;
     QString mode01(const QList<quint8> &pids, double t) const;
     QString codesAnswer(quint8 service, const QList<quint16> &codes) const;
+    // Mode 02: the freeze frame stored with P0133, gone once codes are cleared.
+    QString freezeFrameAnswer(quint8 pid, quint8 frame) const;
 
     QSet<quint8> m_supported;
     QList<quint16> m_stored = {0x0133, 0x0420};

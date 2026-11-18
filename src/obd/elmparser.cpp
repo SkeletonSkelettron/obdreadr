@@ -132,6 +132,17 @@ std::optional<QByteArray> mode01Payload(const QStringList &lines, quint8 pid)
     return std::nullopt;
 }
 
+std::optional<QByteArray> mode02Payload(const QStringList &lines, quint8 pid, quint8 frame)
+{
+    const QString prefix = QStringLiteral("42") + obd::hex2(pid) + obd::hex2(frame);
+    for (const QString &line : lines) {
+        const QString c = stripFrameIndex(compact(line));
+        if (c.size() > prefix.size() && c.startsWith(prefix) && isHex(c))
+            return QByteArray::fromHex(c.mid(prefix.size()).toLatin1());
+    }
+    return std::nullopt;
+}
+
 std::optional<quint32> supportedMask(const QStringList &lines, quint8 basePid, quint8 service)
 {
     const QString prefix = obd::hex2(quint8(service + 0x40)) + obd::hex2(basePid);

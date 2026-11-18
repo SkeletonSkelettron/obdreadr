@@ -90,6 +90,9 @@ Item {
 
             required property var modelData
             readonly property color kindColor: page.kindColors[modelData.kind]
+            // The freeze frame belongs to the stored code that saved it.
+            readonly property bool hasFrame: modelData.kind === "stored"
+                                             && ObdSession.freezeFrame.code === modelData.code
 
             x: 12
             width: list.width - 24
@@ -122,6 +125,37 @@ Item {
                         color: codeItem.kindColor
                         opacity: 0.8
                         text: page.kindNames[codeItem.modelData.kind]
+                    }
+                    Label {
+                        Layout.topMargin: 8
+                        Layout.fillWidth: true
+                        visible: codeItem.hasFrame
+                        wrapMode: Text.Wrap
+                        font.pixelSize: 12
+                        font.bold: true
+                        color: "#90CAF9"
+                        text: qsTr("Freeze frame: the engine when the code was stored")
+                    }
+                    Repeater {
+                        model: codeItem.hasFrame ? ObdSession.freezeFrame.values : []
+                        delegate: RowLayout {
+                            id: frameRow
+                            required property var modelData
+                            Layout.fillWidth: true
+                            Label {
+                                Layout.fillWidth: true
+                                elide: Text.ElideRight
+                                font.pixelSize: 12
+                                opacity: 0.75
+                                text: frameRow.modelData.name
+                            }
+                            Label {
+                                font.pixelSize: 12
+                                font.bold: true
+                                color: "#90CAF9"
+                                text: frameRow.modelData.value
+                            }
+                        }
                     }
                 }
             }

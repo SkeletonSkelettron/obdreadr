@@ -1199,7 +1199,72 @@ void ObdSession::resetCodes()
     m_milCount = -1;
     m_dtcStatus.clear();
     m_dtcCodes.clear();
+    m_freezeFrame.clear();
     emit dtcChanged();
+}
+
+void ObdSession::readFreezeFrame(quint8 basePid, QList<quint8> pids)
+{
+    // The PIDs the frame holds come as a mask, like the live ones: 02 00 00,
+    // then 02 20 00 while bit 0 is set.
+    const quint64 generation = m_generation;
+    m_elm.send(QStringLiteral("02") + obd::hex2(basePid) + QStringLiteral("00"),
+               [this, generation, basePid, pids](const Elm327::Reply &reply) mutable {
+        if (!isCurrent(generation))
+            return;
+        const auto payload = elm::mode02Payload(reply.lines, basePid, 0);
+        if (payload && payload->size() >= 4) {
+            const quint32 mask = quint32(quint8(payload->at(0))) << 24 | quint32(quint8(payload->at(1))) << 16
+                                 | quint32(quint8(payload->at(2))) << 8 | quint32(quint8(payload->at(3)));
+            pids << obd::pidsFromMask(mask, basePid);
+            if ((mask & 1u) && basePid < 0xC0) {
+                readFreezeFrame(quint8(basePid + 0x20), pids);
+                return;
+            }
+        }
+        if (!pids.isEmpty())
+            readFreezeFrameValues(pids);
+    }, 3000);
+}
+
+void ObdSession::readFreezeFrameValues(const QList<quint8> &pids)
+{
+    const quint64 generation = m_generation;
+    // PID 02 of mode 02 is the code that stored the frame.
+    m_elm.send(QStringLiteral("020200"), [this, generation](const Elm327::Reply &reply) {
+        if (!isCurrent(generation))
+            return;
+        const auto payload = elm::mode02Payload(reply.lines, 0x02, 0);
+        if (!payload || payload->size() < 2 || (payload->at(0) == 0 && payload->at(1) == 0))
+            return;
+        m_freezeFrame.insert(QStringLiteral("code"), dtc::fromBytes(quint8(payload->at(0)), quint8(payload->at(1))));
+        m_freezeFrame.insert(QStringLiteral("values"), QVariantList());
+        emit dtcChanged();
+    }, 3000);
+
+    for (quint8 pid : pids) {
+        const obd::PidInfo *info = obd::findPid(pid);
+        if (!info)
+            continue;
+        m_elm.send(QStringLiteral("02") + obd::hex2(pid) + QStringLiteral("00"),
+                   [this, generation, pid, info](const Elm327::Reply &reply) {
+            if (!isCurrent(generation) || !m_freezeFrame.contains(QStringLiteral("code")))
+                return;
+            const auto payload = elm::mode02Payload(reply.lines, pid, 0);
+            const auto value = payload ? obd::decode(pid, *payload) : std::nullopt;
+            if (!value)
+                return;
+            QVariantList values = m_freezeFrame.value(QStringLiteral("values")).toList();
+            const QString unit = QString::fromUtf8(info->unit);
+            values << QVariantMap{
+                {QStringLiteral("name"), QString::fromUtf8(info->name)},
+                {QStringLiteral("value"), QLocale::c().toString(*value, 'f', info->decimals)
+                                              + (unit.isEmpty() ? QString() : QStringLiteral(" ") + unit)},
+            };
+            m_freezeFrame.insert(QStringLiteral("values"), values);
+            emit dtcChanged();
+        }, 3000);
+    }
 }
 
 void ObdSession::readCodes()
@@ -1208,6 +1273,7 @@ void ObdSession::readCodes()
         return;
     m_dtcBusy = true;
     m_dtcCodes.clear();
+    m_freezeFrame.clear();
     m_milOn = false;
     m_milCount = -1;
     m_dtcStatus = tr("Reading fault codes…");
@@ -1261,8 +1327,14 @@ void ObdSession::readCodes()
                           .arg(QString::fromLatin1(kind.name), QString::fromLatin1(kind.command),
                                codes.isEmpty() ? (reply.error.isEmpty() ? tr("none") : reply.error)
                                                : codes.join(QStringLiteral(", "))));
-            if (last)
+            if (last) {
                 finishCodes(std::exchange(m_dtcNote, QString()));
+                const bool stored = std::any_of(m_dtcCodes.begin(), m_dtcCodes.end(), [](const QVariant &code) {
+                    return code.toMap().value(QStringLiteral("kind")).toString() == QLatin1String("stored");
+                });
+                if (stored)
+                    readFreezeFrame();
+            }
         }, 5000);
     }
 }
@@ -1305,6 +1377,7 @@ void ObdSession::clearCodes()
         if (cleared) {
             appendLog(tr("Fault codes cleared"));
             m_dtcNote = tr("Codes cleared");
+            m_freezeFrame.clear();
             readCodes();
             return;
         }

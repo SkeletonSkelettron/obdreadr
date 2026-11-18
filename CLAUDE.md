@@ -146,6 +146,10 @@ Things worth knowing before changing them:
   `connect/last` (`bt`, `wifi` or `demo`, written by each `connect*`).
   `updateScreenOn()` sets the window's keep-screen-on flag (through
   `ObdBackground.keepScreenOn`) while connected or reconnecting.
+- **Freeze frame.** When `readCodes` finds stored codes it calls
+  `readFreezeFrame`: the mask (`020000`, `022000`, ...), the code (`020200`)
+  and then each supported PID of the table, parsed by `elm::mode02Payload`
+  into `freezeFrame` {code, values}; CodesView shows it under that code.
 - **Alerts.** `recordValue` feeds every reading to `alerts::Monitor`
   (`src/alerts.*`: thresholds, hysteresis, cooldowns), and `pollCheckEngine`
   sends `0101` every 60 s for the check engine light. `deliver()` logs each

@@ -30,6 +30,9 @@ QString errorIn(const QStringList &lines);
 // The data bytes after "41 <pid>" from the first ECU that answered.
 std::optional<QByteArray> mode01Payload(const QStringList &lines, quint8 pid);
 
+// The data bytes after "42 <pid> <frame>" in a freeze frame answer (mode 02).
+std::optional<QByteArray> mode02Payload(const QStringList &lines, quint8 pid, quint8 frame = 0);
+
 // The supported-PID mask answered to PID 00, 20, 40, ... of `service`
 // (01 for sensors, 06 for test results); masks from several ECUs are OR-ed.
 std::optional<quint32> supportedMask(const QStringList &lines, quint8 basePid, quint8 service = 0x01);

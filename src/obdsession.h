@@ -60,6 +60,7 @@ class ObdSession : public QObject
     Q_PROPERTY(QString dtcStatus READ dtcStatus NOTIFY dtcChanged)
     Q_PROPERTY(QVariantList dtcCodes READ dtcCodes NOTIFY dtcChanged)
     Q_PROPERTY(QVariantList readiness READ readiness NOTIFY dtcChanged)
+    Q_PROPERTY(QVariantMap freezeFrame READ freezeFrame NOTIFY dtcChanged)
     Q_PROPERTY(QVariantList healthChecks READ healthChecks NOTIFY healthChanged)
     Q_PROPERTY(bool testsBusy READ testsBusy NOTIFY testsChanged)
     Q_PROPERTY(bool testsRead READ testsRead NOTIFY testsChanged)
@@ -120,6 +121,9 @@ public:
     QString dtcStatus() const { return m_dtcStatus; }
     QVariantList dtcCodes() const { return m_dtcCodes; }
     QVariantList readiness() const { return m_readiness; }
+    // The freeze frame (mode 02): {code, values: [{name, value}]}, read after
+    // the codes when there are stored ones; empty when the car keeps none.
+    QVariantMap freezeFrame() const { return m_freezeFrame; }
     QVariantList healthChecks() const { return m_healthChecks; }
     bool testsBusy() const { return m_testsBusy; }
     bool testsRead() const { return m_testsRead; }
@@ -323,6 +327,8 @@ private:
     int m_viewTab = 0;
 
     void resetCodes();
+    void readFreezeFrame(quint8 basePid = 0x00, QList<quint8> pids = {});
+    void readFreezeFrameValues(const QList<quint8> &pids);
     void finishCodes(const QString &status);
     bool m_dtcBusy = false;
     bool m_dtcRead = false;
@@ -332,6 +338,7 @@ private:
     QString m_dtcNote; // shown with the next read, e.g. after clearing
     QVariantList m_dtcCodes;
     QVariantList m_readiness;
+    QVariantMap m_freezeFrame;
     QVariantList m_healthChecks;
     QTimer m_healthTimer;
     QHash<int, SensorSeries *> m_seriesByPid; // -1 for the adapter voltage

@@ -627,6 +627,35 @@ private slots:
         QVERIFY(elm::supportedMask(askCan(QStringLiteral("0100"), 30), 0x00));
     }
 
+    void readsSimulatedFreezeFrame()
+    {
+        SimEcu ecu;
+        ask(ecu, QStringLiteral("ATE0"));
+        ask(ecu, QStringLiteral("ATS0"));
+        const auto mask = elm::mode02Payload(ask(ecu, QStringLiteral("020000")), 0x00, 0);
+        QVERIFY(mask);
+        QCOMPARE(mask->size(), 4);
+        const quint32 bits = quint32(quint8(mask->at(0))) << 24 | quint32(quint8(mask->at(1))) << 16
+                             | quint32(quint8(mask->at(2))) << 8 | quint32(quint8(mask->at(3)));
+        const QList<quint8> pids = obd::pidsFromMask(bits, 0x00);
+        QVERIFY(pids.contains(0x02));
+        QVERIFY(pids.contains(0x0C));
+        QVERIFY(!(bits & 1u)); // no PIDs past 20
+
+        const auto code = elm::mode02Payload(ask(ecu, QStringLiteral("020200")), 0x02, 0);
+        QVERIFY(code);
+        QCOMPARE(dtc::fromBytes(quint8(code->at(0)), quint8(code->at(1))), QStringLiteral("P0133"));
+        const auto rpm = elm::mode02Payload(ask(ecu, QStringLiteral("020C00")), 0x0C, 0);
+        QVERIFY(rpm);
+        QCOMPARE(*obd::decode(0x0C, *rpm), 2240.0);
+        QCOMPARE(*obd::decode(0x0D, *elm::mode02Payload(ask(ecu, QStringLiteral("020D00")), 0x0D, 0)), 64.0);
+        QCOMPARE(*obd::decode(0x05, *elm::mode02Payload(ask(ecu, QStringLiteral("020500")), 0x05, 0)), 91.0);
+        // A live answer does not pass for a frame, and the frame goes with the codes.
+        QVERIFY(!elm::mode02Payload(ask(ecu, QStringLiteral("010C")), 0x0C, 0));
+        ask(ecu, QStringLiteral("04"));
+        QCOMPARE(elm::errorIn(ask(ecu, QStringLiteral("020200"))), QStringLiteral("NO DATA"));
+    }
+
     void alertsOnOverheating()
     {
         alerts::Monitor monitor;

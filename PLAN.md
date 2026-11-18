@@ -45,7 +45,7 @@ Switch and engine speed limit under Options on the start page for now.
 - Settings: `alerts/enabled` (default on), `alerts/rpm`.
 - Tests: the monitor with synthetic readings.
 
-## 3. Freeze frame (mode 02)
+## 3. Freeze frame (mode 02) — done
 
 - `elm::mode02Payload(lines, pid, frame)` (answer `42 <pid> <frame> data`).
 - After reading codes: `020000` (mask, continue with 2000, 4000 while bit 0

@@ -33,7 +33,9 @@ car through an ELM327 OBD-II adapter and draws it as scrolling charts.
   ⋮ → Compared sensors.
 - **Diagnostics** (⋮ → Diagnostics), in four tabs:
   - **Codes**: the check engine light, stored (mode 03), pending (07) and
-    permanent (0A) fault codes with short descriptions, and clearing them (04).
+    permanent (0A) fault codes with short descriptions, the freeze frame
+    (mode 02: engine speed, load, temperatures and more at the moment the
+    code was stored), and clearing them (04).
   - **Health**: checks on the live sensor data for problems that develop
     before a fault code: fuel trims (with a vacuum leak or fuel delivery
     pattern), charging and battery voltage, thermostat and overheating,
