@@ -56,7 +56,9 @@ Switch and engine speed limit under Options on the start page for now.
 - SimEcu: frame for P0133 (rpm 2240, 64 km/h, coolant 91, load 46 %, STFT +2,
   LTFT +9, MAP 52, IAT 24, throttle 18 %); NO DATA after clearing.
 
-## 4. Drive history with cost
+## 4. Drive history with cost — done
+
+Drives shorter than 0.2 km and 2 minutes are not kept.
 
 - FuelMeter: setting `fuel/price` (GEL per litre, 0 = off); every totals map
   gets `cost` ("4.85 ₾") and the Fuel tab shows it.

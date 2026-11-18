@@ -426,6 +426,7 @@ void ObdSession::disconnectAdapter()
 {
     m_reconnectTimer.stop();
     teardown();
+    m_fuel->finishDrive();
     setState(Disconnected);
     setStatus(QString());
     stopService();

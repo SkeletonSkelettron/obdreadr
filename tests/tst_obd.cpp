@@ -499,6 +499,48 @@ private slots:
         QCOMPARE(qRound(restarted.driveTotals().km), 0); // a new process starts a new drive
     }
 
+    void keepsDrivesWithCost()
+    {
+        {
+            FuelMeter meter(nullptr);
+            meter.clearDrives();
+            meter.setCorrection(100);
+            meter.setPrice(3.0);
+            meter.startSession({0x0D, 0x5E}, true);
+            // 10 minutes at 60 km/h burning 6 L/h: 10 km, 1 L.
+            for (int t = 0; t <= 600; ++t) {
+                meter.addSample(0x0D, t, 60);
+                meter.addSample(0x5E, t, 6);
+            }
+            QCOMPARE(meter.drive().value(QStringLiteral("cost")).toString(), QStringLiteral("3.00 ₾"));
+            meter.endSession();
+            meter.finishDrive();
+            QCOMPARE(meter.drives().size(), 1);
+            QCOMPARE(meter.drives().first().toMap().value(QStringLiteral("distance")).toString(),
+                     QStringLiteral("10.0 km"));
+            QCOMPARE(qRound(meter.driveTotals().km), 0);
+
+            // A connection too short to count is not kept.
+            meter.startSession({0x0D, 0x5E}, true);
+            meter.addSample(0x0D, 700, 30);
+            meter.addSample(0x0D, 701, 30);
+            meter.finishDrive();
+            QCOMPARE(meter.drives().size(), 1);
+
+            // A drive the app was stopped in is finished at the next start.
+            meter.startSession({0x0D, 0x5E}, true);
+            for (int t = 800; t <= 1100; ++t)
+                meter.addSample(0x0D, t, 36);
+            meter.save();
+        }
+        FuelMeter restarted(nullptr);
+        QCOMPARE(restarted.drives().size(), 2);
+        QCOMPARE(restarted.drives().first().toMap().value(QStringLiteral("distance")).toString(),
+                 QStringLiteral("3.00 km"));
+        restarted.setPrice(0);
+        QCOMPARE(restarted.drives().first().toMap().value(QStringLiteral("cost")).toString(), QString());
+    }
+
     void estimatesFuelOnSimulatedCar()
     {
         // The demo car reports both its fuel rate and its air flow; the

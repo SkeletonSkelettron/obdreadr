@@ -132,7 +132,12 @@ Things worth knowing before changing them:
   tab is on screen). Distance and fuel are integrated per sample with a
   10 s maximum gap. Fuel is stored raw; the correction is applied when shown.
   "This drive" starts from zero only on a connection the user starts, not on
-  Retry or an automatic reconnect.
+  Retry or an automatic reconnect. The drive is persisted (`fuel/drive/*`);
+  it is finished into `fuel/drives` (newest first, 50 at most, not when
+  shorter than 0.2 km and 2 minutes) by the next new drive, by
+  `disconnectAdapter()` (`FuelMeter::finishDrive`) or, after the app was
+  stopped, by the next start. With `fuel/price` above 0 every totals map has
+  a `cost`.
 - **Background.** With `background/enabled` (default on, Android only) a
   connection starts `ObdService` (foreground, type connectedDevice, partial
   wake lock); the notification text is refreshed every 5 s. `fail()` schedules
@@ -160,8 +165,8 @@ Things worth knowing before changing them:
   `alerts/enabled`, `alerts/rpm`,
   `sensors/active`, `sensors/pinned`, `view/window`, `view/tab`,
   `view/keepScreenOn`, `record/all`, `background/enabled`, `fuel/type`,
-  `fuel/engineLiters`, `fuel/correction`, `fuel/total/*`, `fuel/trip/*`,
-  `fuel/history`.
+  `fuel/engineLiters`, `fuel/correction`, `fuel/price`, `fuel/total/*`,
+  `fuel/trip/*`, `fuel/history`, `fuel/drive/*`, `fuel/drives`.
 
 ## Build and test
 

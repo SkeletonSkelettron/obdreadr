@@ -19,8 +19,9 @@ class QElapsedTimer;
 
 // Fuel used and distance driven: right now, since connecting ("this
 // drive"), in a measurement the user starts and stops, and in total over
-// every drive. The measurement, the total and the finished measurements
-// are kept in the settings, so they carry on across connections and restarts.
+// every drive, with the cost at the fuel price set. The measurement, the
+// total, the current drive and the finished measurements and drives are kept
+// in the settings, so they carry on across connections and restarts.
 class FuelMeter : public QObject
 {
     Q_OBJECT
@@ -39,9 +40,11 @@ class FuelMeter : public QObject
     Q_PROPERTY(QVariantMap drive READ drive NOTIFY changed)
     Q_PROPERTY(QVariantMap total READ total NOTIFY changed)
     Q_PROPERTY(QVariantList history READ history NOTIFY changed)
+    Q_PROPERTY(QVariantList drives READ drives NOTIFY changed)
     Q_PROPERTY(int fuelType READ fuelType WRITE setFuelType NOTIFY settingsChanged)
     Q_PROPERTY(double engineLiters READ engineLiters WRITE setEngineLiters NOTIFY settingsChanged)
     Q_PROPERTY(int correction READ correction WRITE setCorrection NOTIFY settingsChanged)
+    Q_PROPERTY(double price READ price WRITE setPrice NOTIFY settingsChanged)
     Q_PROPERTY(bool onScreen READ onScreen WRITE setOnScreen NOTIFY onScreenChanged)
 
 public:
@@ -62,12 +65,17 @@ public:
     QVariantMap drive() const;
     QVariantMap total() const;
     QVariantList history() const;
+    // Finished drives, newest first, like the history.
+    QVariantList drives() const;
     int fuelType() const { return int(m_kind); }
     void setFuelType(int type);
     double engineLiters() const { return m_engineLiters; }
     void setEngineLiters(double liters);
     int correction() const { return m_correction; }
     void setCorrection(int percent);
+    // Lari per litre; 0 shows no cost.
+    double price() const { return m_price; }
+    void setPrice(double gelPerLiter);
     bool onScreen() const { return m_onScreen; }
     void setOnScreen(bool on);
 
@@ -77,7 +85,8 @@ public:
     const fuel::Totals &totalTotals() const { return m_total; }
 
     // Called by ObdSession: a connection reached the car and reports `pids`;
-    // `newDrive` starts "this drive" from zero (not after an automatic reconnect).
+    // `newDrive` finishes the last drive and starts "this drive" from zero
+    // (not after an automatic reconnect).
     void startSession(const QSet<int> &pids, bool newDrive);
     // A sensor stopped answering.
     void setAvailablePids(const QSet<int> &pids);
@@ -94,6 +103,10 @@ public:
     Q_INVOKABLE void stopTrip();
     Q_INVOKABLE void resetTotal();
     Q_INVOKABLE void clearHistory();
+    // Ends "this drive" and adds it to the drives, when it was long enough;
+    // ObdSession calls it when the user disconnects.
+    Q_INVOKABLE void finishDrive();
+    Q_INVOKABLE void clearDrives();
 
 signals:
     void changed();
@@ -133,6 +146,8 @@ private:
     void markDirty();
     void updateTick();
     QVariantMap totalsMap(const fuel::Totals &totals, double seconds) const;
+    QVariantList listMap(const QVariantList &raw, bool movingTime) const;
+    void finishDriveAt(const QDateTime &fallbackEnd);
     static fuel::Totals loadTotals(const QSettings &settings, const QString &group);
     static void saveTotals(QSettings &settings, const QString &group, const fuel::Totals &totals);
 
@@ -140,6 +155,7 @@ private:
     fuel::Kind m_kind = fuel::Kind::Petrol;
     double m_engineLiters = 1.6;
     int m_correction = 100;
+    double m_price = 0;
     bool m_onScreen = false;
 
     bool m_connected = false;
@@ -165,6 +181,9 @@ private:
     QDateTime m_tripEnd;
     QDateTime m_totalSince;
     QVariantList m_history; // finished measurements, newest first, raw figures
+    QDateTime m_driveStart;
+    QDateTime m_driveLast;  // when the drive last counted something
+    QVariantList m_drives;  // finished drives, newest first, raw figures
 
     bool m_dirty = false;
     QTimer m_notifyTimer; // batches changed() to a few times a second

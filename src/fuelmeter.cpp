@@ -23,6 +23,9 @@ constexpr double kInputAge = 3;         // engine readings combined into one est
 constexpr double kIntakeTempAge = 60;   // intake temperature changes slowly
 constexpr double kMovingKmh = 5;        // below this, consumption is shown per hour
 constexpr int kMaxHistory = 20;
+constexpr int kMaxDrives = 50;
+constexpr double kMinDriveKm = 0.2;       // shorter drives are not kept
+constexpr double kMinDriveSeconds = 120;
 
 QString number(double value, int decimals)
 {
@@ -87,6 +90,12 @@ FuelMeter::FuelMeter(const QElapsedTimer *clock, QObject *parent)
     if (m_tripRunning && !m_tripStart.isValid())
         m_tripStart = QDateTime::currentDateTime();
     m_history = s.value(QStringLiteral("fuel/history")).toList();
+    m_price = std::clamp(s.value(QStringLiteral("fuel/price"), 0.0).toDouble(), 0.0, 100.0);
+    m_drives = s.value(QStringLiteral("fuel/drives")).toList();
+    // A drive still open was cut short by the app being stopped: finish it.
+    m_drive = loadTotals(s, QStringLiteral("fuel/drive"));
+    m_driveStart = s.value(QStringLiteral("fuel/drive/started")).toDateTime();
+    m_driveLast = s.value(QStringLiteral("fuel/drive/last")).toDateTime();
 
     m_notifyTimer.setSingleShot(true);
     m_notifyTimer.setInterval(400);
@@ -96,6 +105,9 @@ FuelMeter::FuelMeter(const QElapsedTimer *clock, QObject *parent)
     connect(&m_saveTimer, &QTimer::timeout, this, &FuelMeter::save);
     m_tickTimer.setInterval(1000);
     connect(&m_tickTimer, &QTimer::timeout, this, &FuelMeter::changed);
+
+    // A drive still open was cut short by the app being stopped: finish it.
+    finishDriveAt(QDateTime::currentDateTime());
 }
 
 FuelMeter::~FuelMeter()
@@ -139,6 +151,17 @@ void FuelMeter::setCorrection(int percent)
     touch();
 }
 
+void FuelMeter::setPrice(double gelPerLiter)
+{
+    gelPerLiter = std::round(std::clamp(gelPerLiter, 0.0, 100.0) * 100.0) / 100.0;
+    if (qFuzzyCompare(gelPerLiter + 1, m_price + 1))
+        return;
+    m_price = gelPerLiter;
+    QSettings().setValue(QStringLiteral("fuel/price"), gelPerLiter);
+    emit settingsChanged();
+    touch();
+}
+
 void FuelMeter::setOnScreen(bool on)
 {
     if (m_onScreen == on)
@@ -158,8 +181,10 @@ void FuelMeter::startSession(const QSet<int> &pids, bool newDrive)
     m_rateIntegrator.reset();
     m_speed = m_rate = m_map = m_rpm = m_intakeTemp = m_lambda = Reading{};
     m_window.clear();
-    if (newDrive)
-        m_drive = {};
+    if (newDrive) {
+        finishDriveAt(QDateTime::currentDateTime());
+        m_driveStart = QDateTime::currentDateTime();
+    }
     chooseMethod();
     emit methodChanged(); // the text changes from "connect to the car" even if the method does not
     touch();
@@ -267,6 +292,9 @@ void FuelMeter::add(double km, double liters, double seconds)
         totals->liters += liters;
         totals->seconds += seconds;
     }
+    m_driveLast = QDateTime::currentDateTime();
+    if (!m_driveStart.isValid())
+        m_driveStart = m_driveLast;
     if (m_tripRunning) {
         m_trip.km += km;
         m_trip.liters += liters;
@@ -367,6 +395,40 @@ void FuelMeter::clearHistory()
     touch();
 }
 
+void FuelMeter::finishDrive()
+{
+    finishDriveAt(QDateTime::currentDateTime());
+}
+
+void FuelMeter::finishDriveAt(const QDateTime &fallbackEnd)
+{
+    if (m_drive.km >= kMinDriveKm || m_drive.seconds >= kMinDriveSeconds) {
+        const QDateTime end = m_driveLast.isValid() ? m_driveLast : fallbackEnd;
+        const QDateTime start = m_driveStart.isValid() ? m_driveStart : end.addSecs(-qint64(m_drive.seconds));
+        m_drives.prepend(QVariantMap{
+            {QStringLiteral("start"), start},
+            {QStringLiteral("end"), end},
+            {QStringLiteral("km"), m_drive.km},
+            {QStringLiteral("liters"), m_drive.liters},
+            {QStringLiteral("seconds"), m_drive.seconds},
+        });
+        while (m_drives.size() > kMaxDrives)
+            m_drives.removeLast();
+    }
+    m_drive = {};
+    m_driveStart = QDateTime();
+    m_driveLast = QDateTime();
+    save();
+    touch();
+}
+
+void FuelMeter::clearDrives()
+{
+    m_drives.clear();
+    save();
+    touch();
+}
+
 void FuelMeter::save()
 {
     m_saveTimer.stop();
@@ -378,6 +440,10 @@ void FuelMeter::save()
     s.setValue(QStringLiteral("fuel/trip/started"), m_tripStart);
     s.setValue(QStringLiteral("fuel/trip/stopped"), m_tripEnd);
     s.setValue(QStringLiteral("fuel/history"), m_history);
+    saveTotals(s, QStringLiteral("fuel/drive"), m_drive);
+    s.setValue(QStringLiteral("fuel/drive/started"), m_driveStart);
+    s.setValue(QStringLiteral("fuel/drive/last"), m_driveLast);
+    s.setValue(QStringLiteral("fuel/drives"), m_drives);
     m_dirty = false;
 }
 
@@ -483,6 +549,8 @@ QVariantMap FuelMeter::totalsMap(const fuel::Totals &totals, double seconds) con
         {QStringLiteral("fuel"), formatLiters(totals.liters * factor())},
         {QStringLiteral("average"), formatPer100(totals.per100km(factor()))},
         {QStringLiteral("time"), formatDuration(seconds)},
+        {QStringLiteral("cost"), m_price > 0 ? QStringLiteral("%1 ₾").arg(number(totals.liters * factor() * m_price, 2))
+                                             : QString()},
     };
 }
 
@@ -513,15 +581,30 @@ QVariantMap FuelMeter::total() const
 
 QVariantList FuelMeter::history() const
 {
+    return listMap(m_history, false);
+}
+
+QVariantList FuelMeter::drives() const
+{
+    return listMap(m_drives, true);
+}
+
+QVariantList FuelMeter::listMap(const QVariantList &raw, bool movingTime) const
+{
+    // Measurements show the time from start to stop; drives, like "this
+    // drive", the time the car was read.
     QVariantList list;
-    for (const QVariant &item : m_history) {
-        const QVariantMap raw = item.toMap();
+    for (const QVariant &item : raw) {
+        const QVariantMap entry = item.toMap();
         fuel::Totals totals;
-        totals.km = raw.value(QStringLiteral("km")).toDouble();
-        totals.liters = raw.value(QStringLiteral("liters")).toDouble();
-        const QDateTime start = raw.value(QStringLiteral("start")).toDateTime();
-        const QDateTime end = raw.value(QStringLiteral("end")).toDateTime();
-        QVariantMap map = totalsMap(totals, start.isValid() && end.isValid() ? start.secsTo(end) : 0);
+        totals.km = entry.value(QStringLiteral("km")).toDouble();
+        totals.liters = entry.value(QStringLiteral("liters")).toDouble();
+        const QDateTime start = entry.value(QStringLiteral("start")).toDateTime();
+        const QDateTime end = entry.value(QStringLiteral("end")).toDateTime();
+        const double seconds = movingTime ? entry.value(QStringLiteral("seconds")).toDouble()
+                               : start.isValid() && end.isValid() ? start.secsTo(end)
+                                                                   : 0;
+        QVariantMap map = totalsMap(totals, seconds);
         map.insert(QStringLiteral("period"), start.isValid() ? formatPeriod(start, end) : QString());
         list << map;
     }

@@ -17,6 +17,7 @@ Item {
     readonly property var drive: view.fuel.drive
     readonly property var total: view.fuel.total
     readonly property var history: view.fuel.history
+    readonly property var drives: view.fuel.drives
     // The latest finished measurement is in the measurement card.
     readonly property var pastTrips: view.fuel.tripRunning ? view.history : view.history.slice(1)
 
@@ -97,6 +98,36 @@ Item {
         Stat {
             label: qsTr("Time")
             value: grid.totals.time
+        }
+        Stat {
+            visible: grid.totals.cost !== ""
+            label: qsTr("Cost")
+            value: grid.totals.cost
+        }
+    }
+
+    // One line for a finished measurement or drive.
+    component PastLine: ColumnLayout {
+        id: past
+
+        required property var modelData
+
+        Layout.fillWidth: true
+        spacing: 0
+
+        Hint {
+            text: past.modelData.period
+        }
+        Label {
+            Layout.fillWidth: true
+            wrapMode: Text.Wrap
+            text: {
+                let parts = [past.modelData.distance, past.modelData.fuel,
+                             qsTr("%1 L/100 km").arg(past.modelData.average), past.modelData.time]
+                if (past.modelData.cost !== "")
+                    parts.push(past.modelData.cost)
+                return parts.join(" · ")
+            }
         }
     }
 
@@ -213,6 +244,39 @@ Item {
                 }
             }
 
+            // Drives ---------------------------------------------------------
+            Card {
+                visible: view.drives.length > 0
+
+                ColumnLayout {
+                    anchors.fill: parent
+                    spacing: 8
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 0
+                            Title {
+                                text: qsTr("Drives")
+                            }
+                            Hint {
+                                text: qsTr("Each connection to the car, from connecting to leaving the dashboard")
+                            }
+                        }
+                        Button {
+                            flat: true
+                            text: qsTr("Clear")
+                            onClicked: clearDrivesDialog.open()
+                        }
+                    }
+                    Repeater {
+                        model: view.drives
+                        delegate: PastLine {}
+                    }
+                }
+            }
+
             // Total ----------------------------------------------------------
             Card {
                 ColumnLayout {
@@ -265,26 +329,7 @@ Item {
                     }
                     Repeater {
                         model: view.pastTrips
-
-                        delegate: ColumnLayout {
-                            id: past
-
-                            required property var modelData
-
-                            Layout.fillWidth: true
-                            spacing: 0
-
-                            Hint {
-                                text: past.modelData.period
-                            }
-                            Label {
-                                Layout.fillWidth: true
-                                wrapMode: Text.Wrap
-                                text: qsTr("%1 · %2 · %3 L/100 km · %4").arg(past.modelData.distance)
-                                          .arg(past.modelData.fuel).arg(past.modelData.average)
-                                          .arg(past.modelData.time)
-                            }
-                        }
+                        delegate: PastLine {}
                     }
                 }
             }
@@ -347,6 +392,26 @@ Item {
                     Hint {
                         text: qsTr("Fill the tank, measure until the next fill-up, and compare. If the app counted 40 L and the pump 44 L, set 110 %. It applies to every figure shown, the earlier ones too.")
                     }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Label {
+                            Layout.fillWidth: true
+                            text: qsTr("Fuel price")
+                        }
+                        SpinBox {
+                            from: 0
+                            to: 1000
+                            stepSize: 5
+                            editable: true
+                            value: Math.round(view.fuel.price * 100)
+                            textFromValue: (value, locale) => (value / 100).toFixed(2) + " ₾/L"
+                            valueFromText: (text, locale) => Math.round(parseFloat(text.replace(",", ".")) * 100)
+                            onValueModified: view.fuel.price = value / 100
+                        }
+                    }
+                    Hint {
+                        text: qsTr("Shows what the fuel cost; 0 hides it.")
+                    }
 
                     Switch {
                         Layout.fillWidth: true
@@ -386,6 +451,23 @@ Item {
         }
 
         onAccepted: view.fuel.resetTotal()
+    }
+
+    Dialog {
+        id: clearDrivesDialog
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        width: Math.min(parent.width - 32, 420) // the overlay
+        modal: true
+        title: qsTr("Clear the drives?")
+        standardButtons: Dialog.Yes | Dialog.Cancel
+
+        contentItem: Label {
+            wrapMode: Text.Wrap
+            text: qsTr("The list of finished drives is deleted. The total stays.")
+        }
+
+        onAccepted: view.fuel.clearDrives()
     }
 
     Dialog {

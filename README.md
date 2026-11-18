@@ -27,7 +27,8 @@ car through an ELM327 OBD-II adapter and draws it as scrolling charts.
     it, else estimates it from the air flow sensor (MAF) or, without one, from
     intake pressure, engine speed and the engine size you enter (petrol and
     LPG; a diesel needs the fuel rate PID). A correction in percent, found by
-    comparing with a fill-up, scales every figure.
+    comparing with a fill-up, scales every figure. Every drive is kept in a
+    list, and with a fuel price set every figure also shows what it cost (₾).
 
   Pick the charted sensors in ⋮ → Charted sensors and the compared ones in
   ⋮ → Compared sensors.
