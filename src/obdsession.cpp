@@ -136,6 +136,9 @@ ObdSession::ObdSession(QObject *parent)
     m_idleTimer.setSingleShot(true);
     connect(&m_idleTimer, &QTimer::timeout, this, &ObdSession::pollNext);
 
+    m_accelTick.setInterval(100);
+    connect(&m_accelTick, &QTimer::timeout, this, &ObdSession::accelChanged);
+
     m_milTimer.setInterval(kMilPollMs);
     connect(&m_milTimer, &QTimer::timeout, this, &ObdSession::pollCheckEngine);
 
@@ -427,6 +430,77 @@ void ObdSession::removeCustomSensor(int index)
     sensors.removeAt(index);
     custom::save(sensors);
     emit customSensorsChanged();
+}
+
+QVariantList ObdSession::focusPids() const
+{
+    QVariantList list;
+    for (int pid : m_focusPids)
+        list << pid;
+    return list;
+}
+
+void ObdSession::setFocusPids(const QVariantList &pids)
+{
+    QSet<int> set;
+    for (const QVariant &pid : pids)
+        set.insert(pid.toInt());
+    if (set == m_focusPids)
+        return;
+    m_focusPids = set;
+    emit focusPidsChanged();
+    if (m_state == Running)
+        pollNext();
+}
+
+QObject *ObdSession::seriesFor(int pid) const
+{
+    const int row = rowOfPid(pid);
+    return row >= 0 ? m_sensors->entry(row).series : nullptr;
+}
+
+void ObdSession::setFullBrightness(bool on)
+{
+    background::setBrightness(on ? 1.0 : -1.0);
+}
+
+void ObdSession::setAccelActive(bool on)
+{
+    if (m_accelActive == on)
+        return;
+    m_accelActive = on;
+    m_accel.reset();
+    m_accelTick.stop();
+    emit accelChanged();
+}
+
+void ObdSession::resetAccel()
+{
+    m_accel.reset();
+    m_accelTick.stop();
+    emit accelChanged();
+}
+
+void ObdSession::clearAccelBest()
+{
+    QSettings().remove(QStringLiteral("accel/best100"));
+    emit accelChanged();
+}
+
+QVariantMap ObdSession::accel() const
+{
+    static const char *kStates[] = {"idle", "ready", "running", "done", "aborted"};
+    const auto seconds = [](std::optional<double> s) {
+        return s ? QLocale::c().toString(*s, 'f', 2) + QStringLiteral(" s") : QString();
+    };
+    const double best = QSettings().value(QStringLiteral("accel/best100"), 0.0).toDouble();
+    return {
+        {QStringLiteral("state"), QString::fromLatin1(kStates[int(m_accel.state())])},
+        {QStringLiteral("elapsed"), QLocale::c().toString(m_accel.elapsed(m_clock.isValid() ? m_clock.elapsed() / 1000.0 : 0), 'f', 1)},
+        {QStringLiteral("t60"), seconds(m_accel.time60())},
+        {QStringLiteral("t100"), seconds(m_accel.time100())},
+        {QStringLiteral("best100"), best > 0 ? seconds(best) : QString()},
+    };
 }
 
 int ObdSession::rowOfPid(int pid) const
@@ -973,7 +1047,7 @@ int ObdSession::pollIntervalMs(const SensorModel::Entry &e) const
     // Sensors on screen as often as the adapter allows (fast ones) or every
     // second or two; the rest, recorded in the background, less often.
     const obd::Pace pace = e.pid < 0 ? obd::Pace::Medium : obd::pace(quint8(e.pid));
-    const bool shown = e.shown() || (m_fuel->onScreen() && m_fuelPids.contains(e.pid));
+    const bool shown = e.shown() || m_focusPids.contains(e.pid) || (m_fuel->onScreen() && m_fuelPids.contains(e.pid));
     switch (pace) {
     case obd::Pace::Fast: return shown ? 100 : 1000;
     case obd::Pace::Medium: return shown ? 1000 : 2000;
@@ -1012,7 +1086,7 @@ void ObdSession::pollNext()
         const SensorModel::Entry &e = m_sensors->entry(row);
         // The fuel meter's sensors are read whenever connected, so that it
         // keeps counting with the screen off or another tab open.
-        if (!e.available || !(e.shown() || m_recordAll || m_fuelPids.contains(e.pid)))
+        if (!e.available || !(e.shown() || m_recordAll || m_fuelPids.contains(e.pid) || m_focusPids.contains(e.pid)))
             continue;
         const int interval = pollIntervalMs(e);
         const qint64 waited = nowMs - e.lastPollMs;
@@ -1178,6 +1252,23 @@ void ObdSession::recordValue(int row, double t, double value)
     m_fuel->addSample(e.pid, t, value);
     if (m_alertsEnabled)
         deliver(m_alerts.addReading(e.pid, t, value));
+    if (m_accelActive && e.pid == 0x0D) {
+        const accel::State before = m_accel.state();
+        m_accel.addSpeed(t, value);
+        if (m_accel.state() == accel::State::Done && before != accel::State::Done) {
+            const double time = *m_accel.time100();
+            QSettings settings;
+            const double best = settings.value(QStringLiteral("accel/best100"), 0.0).toDouble();
+            if (best <= 0 || time < best)
+                settings.setValue(QStringLiteral("accel/best100"), time);
+            appendLog(tr("0–100 km/h in %1 s").arg(time, 0, 'f', 2));
+        }
+        if (m_accel.state() == accel::State::Running)
+            m_accelTick.start();
+        else
+            m_accelTick.stop();
+        emit accelChanged();
+    }
     m_sinceData.start();
     e.misses = 0;
     m_failStreak = 0;

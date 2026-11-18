@@ -125,7 +125,10 @@ from its first connection.
 - No maker presets: DIDs differ per maker; the owner can enter them from
   community lists.
 
-## 8. 0–100 km/h timer and HUD
+## 8. 0–100 km/h timer and HUD — done
+
+The best 0–100 time is kept in `accel/best100`. The HUD's mirror flips the
+picture top to bottom, for a phone lying with its top toward the windscreen.
 
 - Pure `src/accel.*`: speed samples → states Idle → Ready (stopped) →
   Running → Done/Aborted; 0–60 and 0–100 times, interpolating the crossing

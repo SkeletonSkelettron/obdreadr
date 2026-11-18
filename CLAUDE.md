@@ -86,6 +86,7 @@ QML (qml/): Main → ConnectPage → DashboardPage (5 tabs) → DiagnosticsPage,
 | `src/obdsession.*` | The state machine and everything QML calls |
 | `src/sensormodel.*`, `src/sensorseries.*` | Sensors, their samples and colors |
 | `src/recorder.*` | CSV writer, keeps the newest 50 files in AppDataLocation/recordings |
+| `src/accel.*` | 0–60 and 0–100 km/h timer |
 | `src/customsensors.*` | User-defined sensors: storage, validation, formulas |
 | `src/recording.*`, `src/recordingviewer.*` | Reading a recording back: parsing, summary, series for the charts |
 | `src/health.*` | Health checks on live data |
@@ -158,6 +159,11 @@ Things worth knowing before changing them:
   `readFreezeFrame`: the mask (`020000`, `022000`, ...), the code (`020200`)
   and then each supported PID of the table, parsed by `elm::mode02Payload`
   into `freezeFrame` {code, values}; CodesView shows it under that code.
+- **Focus PIDs, timer and HUD.** Pages set `focusPids`; those are polled as
+  if on screen, also with "Record all sensors" off. `recordValue` feeds speed
+  to `accel::Timer` (`src/accel.*`) while `accelActive` (the timer page);
+  `seriesFor(pid)` gives QML a sensor's series; `setFullBrightness` calls
+  `ObdBackground.setBrightness`.
 - **Custom sensors.** `custom::load()` (`custom/sensors`) is read in
   `finishDiscovery`; each valid one becomes an entry with pid -100, -101, ...,
   `command`, `header` and a formula compiled by `custom::Evaluator`
@@ -183,7 +189,7 @@ Things worth knowing before changing them:
   `background::alert` (Android notification on the high-importance "alerts"
   channel). The monitor is reset only on a connection the user starts.
 - Settings (QSettings): `wifi/*`, `bt/*`, `connect/auto`, `connect/last`,
-  `alerts/enabled`, `alerts/rpm`, `custom/sensors`,
+  `alerts/enabled`, `alerts/rpm`, `custom/sensors`, `accel/best100`,
   `sensors/active`, `sensors/pinned`, `view/window`, `view/tab`,
   `view/keepScreenOn`, `record/all`, `background/enabled`, `fuel/type`,
   `fuel/engineLiters`, `fuel/correction`, `fuel/price`, `fuel/total/*`,

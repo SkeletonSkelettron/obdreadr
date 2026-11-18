@@ -47,6 +47,22 @@ ApplicationWindow {
             onLogRequested: stack.push(logPage)
             onDiagnosticsRequested: stack.push(diagnosticsPage)
             onRecordingsRequested: stack.push(recordingsPage)
+            onAccelRequested: stack.push(accelPage)
+            onHudRequested: stack.push(hudPage)
+        }
+    }
+
+    Component {
+        id: accelPage
+        AccelPage {
+            onBackRequested: stack.pop()
+        }
+    }
+
+    Component {
+        id: hudPage
+        HudPage {
+            onBackRequested: stack.pop()
         }
     }
 

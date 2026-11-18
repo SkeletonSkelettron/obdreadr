@@ -58,6 +58,14 @@ void alert(const QString &title, const QString &text)
     notify("alert", title, text);
 }
 
+void setBrightness(double level)
+{
+    const QJniObject ctx = context();
+    if (ctx.isValid())
+        QJniObject::callStaticMethod<void>(kClass, "setBrightness", "(Landroid/content/Context;F)V", ctx.object(),
+                                           jfloat(level));
+}
+
 void keepScreenOn(bool on)
 {
     const QJniObject ctx = context();
@@ -92,6 +100,7 @@ void start(const QString &, const QString &) {}
 void update(const QString &, const QString &) {}
 void stop() {}
 void alert(const QString &, const QString &) {}
+void setBrightness(double) {}
 void keepScreenOn(bool) {}
 bool batteryRestricted() { return false; }
 void requestUnrestricted() {}

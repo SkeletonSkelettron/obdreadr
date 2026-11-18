@@ -13,6 +13,8 @@ Page {
     signal logRequested()
     signal diagnosticsRequested()
     signal recordingsRequested()
+    signal accelRequested()
+    signal hudRequested()
 
     readonly property bool running: ObdSession.state === ObdSession.Running
     readonly property bool failed: ObdSession.state === ObdSession.Failed
@@ -96,6 +98,14 @@ Page {
                         MenuItem {
                             text: qsTr("Recordings…")
                             onTriggered: page.recordingsRequested()
+                        }
+                        MenuItem {
+                            text: qsTr("0–100 km/h timer…")
+                            onTriggered: page.accelRequested()
+                        }
+                        MenuItem {
+                            text: qsTr("Head-up display…")
+                            onTriggered: page.hudRequested()
                         }
                         MenuItem {
                             text: qsTr("Record all sensors")

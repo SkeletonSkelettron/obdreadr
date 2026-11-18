@@ -1,5 +1,6 @@
 #pragma once
 
+#include "accel.h"
 #include "alerts.h"
 #include "battery.h"
 #include "customsensors.h"
@@ -66,6 +67,9 @@ class ObdSession : public QObject
     Q_PROPERTY(QVariantMap freezeFrame READ freezeFrame NOTIFY dtcChanged)
     Q_PROPERTY(QVariantMap batteryTest READ batteryTest NOTIFY batteryTestChanged)
     Q_PROPERTY(QVariantList customSensors READ customSensors NOTIFY customSensorsChanged)
+    Q_PROPERTY(QVariantList focusPids READ focusPids WRITE setFocusPids NOTIFY focusPidsChanged)
+    Q_PROPERTY(bool accelActive READ accelActive WRITE setAccelActive NOTIFY accelChanged)
+    Q_PROPERTY(QVariantMap accel READ accel NOTIFY accelChanged)
     Q_PROPERTY(QVariantList healthChecks READ healthChecks NOTIFY healthChanged)
     Q_PROPERTY(bool testsBusy READ testsBusy NOTIFY testsChanged)
     Q_PROPERTY(bool testsRead READ testsRead NOTIFY testsChanged)
@@ -214,6 +218,23 @@ public:
     Q_INVOKABLE QString saveCustomSensor(int index, const QVariantMap &sensor);
     Q_INVOKABLE void removeCustomSensor(int index);
 
+    // PIDs a page needs fast (the 0–100 timer, the HUD): read as if on
+    // screen, also with "Record all sensors" off.
+    QVariantList focusPids() const;
+    void setFocusPids(const QVariantList &pids);
+    // The series of a PID (-1: the adapter voltage), or null.
+    Q_INVOKABLE QObject *seriesFor(int pid) const;
+    // Full brightness for the head-up display, or back to the user's.
+    Q_INVOKABLE void setFullBrightness(bool on);
+
+    // The 0–100 km/h timer, fed while its page is open: {state ("idle",
+    // "ready", "running", "done", "aborted"), elapsed, t60, t100, best100}.
+    bool accelActive() const { return m_accelActive; }
+    void setAccelActive(bool on);
+    QVariantMap accel() const;
+    Q_INVOKABLE void resetAccel();
+    Q_INVOKABLE void clearAccelBest();
+
     // Recordings: one CSV file per connection, kept in the app's storage.
     Q_INVOKABLE void refreshRecordings();
     // Copies a recording to `target` (a file or, on Android, a content:// URL
@@ -234,6 +255,8 @@ signals:
     void dtcChanged();
     void batteryTestChanged();
     void customSensorsChanged();
+    void focusPidsChanged();
+    void accelChanged();
     void healthChanged();
     void testsChanged();
     void recordAllChanged();
@@ -312,6 +335,10 @@ private:
     bool m_batteryVoltsNext = true;
     double m_batteryVolts = -1;
     QVariantMap m_batteryResult;
+    QSet<int> m_focusPids;
+    accel::Timer m_accel;
+    bool m_accelActive = false;
+    QTimer m_accelTick; // the running time on screen
 
     void withBluetoothPermission(std::function<void()> action);
 #ifdef OBD_HAVE_BLUETOOTH

@@ -83,6 +83,19 @@ public final class ObdBackground {
         manager.notify(id, builder.build());
     }
 
+    // The window's brightness, 0..1, or -1 (BRIGHTNESS_OVERRIDE_NONE) for
+    // the user's setting.
+    public static void setBrightness(Context context, final float level) {
+        if (!(context instanceof Activity))
+            return;
+        final Activity activity = (Activity) context;
+        activity.runOnUiThread(() -> {
+            WindowManager.LayoutParams params = activity.getWindow().getAttributes();
+            params.screenBrightness = level;
+            activity.getWindow().setAttributes(params);
+        });
+    }
+
     public static void keepScreenOn(Context context, final boolean on) {
         if (!(context instanceof Activity))
             return;

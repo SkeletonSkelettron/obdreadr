@@ -68,6 +68,11 @@ car through an ELM327 OBD-II adapter and draws it as scrolling charts.
   answered, and the measurement and the total carry on. Leaving the dashboard
   disconnects. Some phones also need battery optimization off for the app
   (Fuel tab → Allow running in the background).
+- **0–100 km/h timer** (⋮ → 0–100 km/h timer): arms when the car stands,
+  times 0–60 and 0–100 km/h and keeps the best.
+- **Head-up display** (⋮ → Head-up display): speed, engine speed and
+  consumption, large on black at full brightness, with a mirror switch for
+  reading it as a reflection in the windscreen.
 - **Custom sensors**: any request your car answers, typically a mode 22
   data identifier from your make's list (gearbox temperature, oil level...),
   with the ECU's CAN header and a formula over the data bytes A–H such as

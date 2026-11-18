@@ -1,3 +1,4 @@
+#include "accel.h"
 #include "alerts.h"
 #include "battery.h"
 #include "customsensors.h"
@@ -804,6 +805,38 @@ private slots:
                                                     QStringLiteral("221105"));
         QVERIFY(withHeaders);
         QCOMPARE(*withHeaders, QByteArray::fromHex("7B"));
+    }
+
+    void timesZeroToHundred()
+    {
+        accel::Timer timer;
+        timer.addSpeed(0, 30);                  // moving: not armed
+        QCOMPARE(timer.state(), accel::State::Idle);
+        timer.addSpeed(1, 0);
+        timer.addSpeed(2, 0);
+        QCOMPARE(timer.state(), accel::State::Ready);
+        // 10 km/h per second from t = 2, read every 0.5 s.
+        for (double t = 2.5; t <= 12.6; t += 0.5)
+            timer.addSpeed(t, (t - 2) * 10);
+        QCOMPARE(timer.state(), accel::State::Done);
+        QCOMPARE(qRound(*timer.time60() * 100), 600);
+        QCOMPARE(qRound(*timer.time100() * 100), 1000);
+        QCOMPARE(qRound(timer.elapsed(100) * 100), 1000);
+
+        // Interpolated between readings a second apart: 55 -> 65 crosses 60
+        // half way.
+        accel::Timer coarse;
+        coarse.addSpeed(0, 0);
+        coarse.addSpeed(1, 20);
+        coarse.addSpeed(2, 55);
+        coarse.addSpeed(3, 65);
+        QCOMPARE(*coarse.time60(), 2.5);
+
+        // Slowing down aborts; standing again re-arms.
+        coarse.addSpeed(4, 50);
+        QCOMPARE(coarse.state(), accel::State::Aborted);
+        coarse.addSpeed(10, 0);
+        QCOMPARE(coarse.state(), accel::State::Ready);
     }
 
     void testsTheBattery()
