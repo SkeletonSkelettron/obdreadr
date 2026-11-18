@@ -1,6 +1,7 @@
 #pragma once
 
 #include "alerts.h"
+#include "battery.h"
 #include "elm327.h"
 #include "fuelmeter.h"
 #include "recorder.h"
@@ -18,6 +19,7 @@
 #include <QtQml/qqmlregistration.h>
 
 #include <functional>
+#include <optional>
 
 #ifdef OBD_HAVE_BLUETOOTH
 #include <QBluetoothDeviceInfo>
@@ -61,6 +63,7 @@ class ObdSession : public QObject
     Q_PROPERTY(QVariantList dtcCodes READ dtcCodes NOTIFY dtcChanged)
     Q_PROPERTY(QVariantList readiness READ readiness NOTIFY dtcChanged)
     Q_PROPERTY(QVariantMap freezeFrame READ freezeFrame NOTIFY dtcChanged)
+    Q_PROPERTY(QVariantMap batteryTest READ batteryTest NOTIFY batteryTestChanged)
     Q_PROPERTY(QVariantList healthChecks READ healthChecks NOTIFY healthChanged)
     Q_PROPERTY(bool testsBusy READ testsBusy NOTIFY testsChanged)
     Q_PROPERTY(bool testsRead READ testsRead NOTIFY testsChanged)
@@ -191,6 +194,15 @@ public:
     // Re-runs the health checks on the latest sensor data.
     Q_INVOKABLE void evaluateHealth();
 
+    // Battery test around starting the engine (Diagnostics → Battery): while
+    // it runs only the voltage and the engine speed are read, in turn, as
+    // fast as the adapter answers. batteryTest is {phase ("idle", "resting",
+    // "crank", "running", "done"), volts, rest, restVerdict, cranking,
+    // crankVerdict, charging, chargeVerdict, message}.
+    QVariantMap batteryTest() const { return m_batteryResult; }
+    Q_INVOKABLE void startBatteryTest();
+    Q_INVOKABLE void cancelBatteryTest();
+
     // Recordings: one CSV file per connection, kept in the app's storage.
     Q_INVOKABLE void refreshRecordings();
     // Copies a recording to `target` (a file or, on Android, a content:// URL
@@ -209,6 +221,7 @@ signals:
     void viewTabChanged();
     void pinnedSeriesChanged();
     void dtcChanged();
+    void batteryTestChanged();
     void healthChanged();
     void testsChanged();
     void recordAllChanged();
@@ -255,6 +268,9 @@ private:
     void rememberConnection(const QString &kind);
     void deliver(const QList<alerts::Alert> &raised);
     void pollCheckEngine();
+    int rowOfPid(int pid) const;
+    void pollBatteryStep();
+    void updateBatteryTest(double t, const QString &message = QString());
     void updateScreenOn();
     void startRecording();
     void stopRecording();
@@ -280,6 +296,10 @@ private:
     bool m_alertsEnabled = true;
     int m_alertRpm = 0;
     QTimer m_milTimer; // polls the check engine light for alerts
+    std::optional<battery::Test> m_battery;
+    bool m_batteryVoltsNext = true;
+    double m_batteryVolts = -1;
+    QVariantMap m_batteryResult;
 
     void withBluetoothPermission(std::function<void()> action);
 #ifdef OBD_HAVE_BLUETOOTH

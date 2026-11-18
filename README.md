@@ -45,6 +45,9 @@ car through an ELM327 OBD-II adapter and draws it as scrolling charts.
     before and after it, knock-related timing retard and intake air heat.
     The limits are general rules of thumb.
   - **Readiness**: which of the car's emission self-tests have completed.
+  - **Battery**: a test while starting the engine: the voltage at rest,
+    the lowest voltage while the starter turns and the charging voltage
+    afterwards, each with a verdict.
   - **Tests**: the car's own measurements (mode 06, CAN cars) against the
     limits at which it would set a code, and misfire counts per cylinder.
 - **Recordings for a computer.** Every connection is saved as a CSV file

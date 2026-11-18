@@ -379,6 +379,142 @@ void ObdSession::deliver(const QList<alerts::Alert> &raised)
     }
 }
 
+int ObdSession::rowOfPid(int pid) const
+{
+    for (int row = 0; row < m_sensors->size(); ++row) {
+        if (m_sensors->entry(row).pid == pid)
+            return row;
+    }
+    return -1;
+}
+
+void ObdSession::startBatteryTest()
+{
+    if (m_state != Running) {
+        updateBatteryTest(0, tr("Connect to the car first."));
+        return;
+    }
+    const int rpmRow = rowOfPid(0x0C);
+    if (rpmRow < 0) {
+        updateBatteryTest(0, tr("The car does not report engine speed, which the test needs to see the start."));
+        return;
+    }
+    const SensorSeries *rpm = m_sensors->entry(rpmRow).series;
+    const double now = m_clock.elapsed() / 1000.0;
+    if (rpm->hasValue() && rpm->samples().back().t > now - 10 && rpm->value() > 300) {
+        updateBatteryTest(0, tr("Switch the engine off and leave the ignition on, then press Start."));
+        return;
+    }
+    m_battery.emplace(now);
+    m_batteryVoltsNext = true;
+    m_batteryVolts = -1;
+    appendLog(tr("Battery test started"));
+    updateBatteryTest(now);
+    pollNext();
+}
+
+void ObdSession::cancelBatteryTest()
+{
+    if (!m_battery)
+        return;
+    m_battery.reset();
+    updateBatteryTest(0, tr("Cancelled."));
+    pollNext();
+}
+
+void ObdSession::pollBatteryStep()
+{
+    // Voltage and engine speed in turn, nothing else.
+    const bool volts = m_batteryVoltsNext;
+    m_batteryVoltsNext = !volts;
+    const int pid = volts ? -1 : 0x0C;
+    const int row = rowOfPid(pid);
+    const quint64 generation = m_generation;
+    m_polling = true;
+    m_elm.send(volts ? QString::fromLatin1(kVoltageKey) : QStringLiteral("010C"),
+               [this, generation, pid, row](const Elm327::Reply &reply) {
+        if (!isCurrent(generation))
+            return;
+        m_polling = false;
+        const double t = m_clock.elapsed() / 1000.0;
+        std::optional<double> value;
+        if (pid < 0) {
+            value = elm::parseVoltage(reply.lines);
+        } else if (const auto payload = elm::mode01Payload(reply.lines, quint8(pid))) {
+            value = obd::decode(quint8(pid), *payload);
+        }
+        if (value && m_battery) {
+            if (row >= 0)
+                recordValue(row, t, *value);
+            if (pid < 0) {
+                m_batteryVolts = *value;
+                m_battery->addVolts(t, *value);
+            } else {
+                m_battery->addRpm(t, *value);
+            }
+        }
+        if (m_battery)
+            updateBatteryTest(t);
+        if (m_state == Running)
+            QMetaObject::invokeMethod(this, &ObdSession::pollNext, Qt::QueuedConnection);
+    }, 1500);
+}
+
+void ObdSession::updateBatteryTest(double t, const QString &message)
+{
+    const auto volts = [](double v) { return v < 0 ? QString() : QLocale::c().toString(v, 'f', 2) + QStringLiteral(" V"); };
+    const auto verdict = [](battery::Verdict v) {
+        switch (v) {
+        case battery::Verdict::Ok: return QStringLiteral("ok");
+        case battery::Verdict::Watch: return QStringLiteral("watch");
+        case battery::Verdict::Bad: return QStringLiteral("bad");
+        case battery::Verdict::None: break;
+        }
+        return QString();
+    };
+
+    if (!m_battery) {
+        // Not running: keep the last results, with the new message.
+        if (!message.isEmpty()) {
+            if (m_batteryResult.value(QStringLiteral("phase")).toString() != QLatin1String("done"))
+                m_batteryResult = {{QStringLiteral("phase"), QStringLiteral("idle")}};
+            m_batteryResult.insert(QStringLiteral("message"), message);
+            emit batteryTestChanged();
+        }
+        return;
+    }
+
+    battery::Test &test = *m_battery;
+    test.tick(t);
+    static const char *kPhases[] = {"resting", "crank", "running", "done"};
+    QVariantMap map{
+        {QStringLiteral("phase"), QString::fromLatin1(kPhases[int(test.phase())])},
+        {QStringLiteral("volts"), volts(m_batteryVolts)},
+        {QStringLiteral("rest"), volts(test.rest())},
+        {QStringLiteral("restVerdict"), verdict(battery::Test::restVerdict(test.rest()))},
+        {QStringLiteral("cranking"), volts(test.cranking())},
+        {QStringLiteral("crankVerdict"), verdict(battery::Test::crankVerdict(test.cranking()))},
+        {QStringLiteral("charging"), volts(test.charging())},
+        {QStringLiteral("chargeVerdict"), verdict(battery::Test::chargeVerdict(test.charging()))},
+    };
+    if (test.phase() == battery::Phase::Done) {
+        QString text;
+        if (test.engineWasRunning())
+            text = tr("The engine was running. Switch it off, leave the ignition on and start the test again.");
+        else if (!test.engineStarted())
+            text = tr("The engine did not start within a minute, so only the resting voltage was measured.");
+        else
+            text = tr("Readings come a few times a second, so the real lowest voltage while cranking may be a little lower.");
+        map.insert(QStringLiteral("message"), text);
+        appendLog(tr("Battery test: rest %1, cranking %2, charging %3")
+                      .arg(map.value(QStringLiteral("rest")).toString(), map.value(QStringLiteral("cranking")).toString(),
+                           map.value(QStringLiteral("charging")).toString()));
+        m_battery.reset();
+    }
+    m_batteryResult = map;
+    emit batteryTestChanged();
+}
+
 void ObdSession::pollCheckEngine()
 {
     if (m_state != Running || !m_alertsEnabled)
@@ -500,6 +636,12 @@ void ObdSession::teardown()
     m_fuel->endSession();
     m_healthTimer.stop();
     m_milTimer.stop();
+    if (m_battery) {
+        m_battery.reset();
+        m_batteryResult = {{QStringLiteral("phase"), QStringLiteral("idle")},
+                           {QStringLiteral("message"), tr("The connection dropped during the test. Some adapters restart while the starter turns.")}};
+        emit batteryTestChanged();
+    }
     if (m_testsBusy) {
         m_testsBusy = false;
         emit testsChanged();
@@ -782,6 +924,10 @@ void ObdSession::pollNext()
 {
     if (m_state != Running || m_paused || m_polling)
         return;
+    if (m_battery) {
+        pollBatteryStep();
+        return;
+    }
     // Ask for the sensor that is most overdue relative to its interval, so
     // that when the adapter cannot keep up every sensor slows down evenly.
     const qint64 nowMs = m_clock.elapsed();

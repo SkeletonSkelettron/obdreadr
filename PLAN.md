@@ -68,7 +68,11 @@ Drives shorter than 0.2 km and 2 minutes are not kept.
   on `disconnectAdapter()`, or at the next start if the app was killed.
 - Fuel tab: a "Drives" card with Clear; price in the settings card.
 
-## 5. Battery cranking test
+## 5. Battery cranking test — done
+
+The test ends 10 s after the start (charging is measured 5–10 s after it),
+not after 6 s. The first 3 s measure the resting voltage, then the page asks
+to start the engine.
 
 - Pure `src/battery.*`: from samples {t, volts, rpm}: resting voltage before
   the start, minimum while cranking, charging voltage 5–10 s after

@@ -34,6 +34,7 @@ qt_add_executable(obdreadr
     src/recorder.h src/recorder.cpp
     src/health.h src/health.cpp
     src/alerts.h src/alerts.cpp
+    src/battery.h src/battery.cpp
     src/fuel.h src/fuel.cpp
     src/fuelmeter.h src/fuelmeter.cpp
     src/background.h src/background.cpp
@@ -60,6 +61,7 @@ qt_add_qml_module(obdreadr
         qml/HealthView.qml
         qml/ReadinessView.qml
         qml/TestsView.qml
+        qml/BatteryView.qml
         qml/RecordingsPage.qml
         qml/LogPage.qml
         qml/FuelView.qml
@@ -115,6 +117,7 @@ if(NOT ANDROID)
             src/sensorseries.cpp
             src/health.cpp
             src/alerts.cpp
+            src/battery.cpp
             src/fuel.cpp
             src/fuelmeter.h src/fuelmeter.cpp)
         target_include_directories(tst_obd PRIVATE src)

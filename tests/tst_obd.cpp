@@ -1,4 +1,5 @@
 #include "alerts.h"
+#include "battery.h"
 #include "obd/dtc.h"
 #include "obd/elmparser.h"
 #include "obd/pids.h"
@@ -696,6 +697,53 @@ private slots:
         QVERIFY(!elm::mode02Payload(ask(ecu, QStringLiteral("010C")), 0x0C, 0));
         ask(ecu, QStringLiteral("04"));
         QCOMPARE(elm::errorIn(ask(ecu, QStringLiteral("020200"))), QStringLiteral("NO DATA"));
+    }
+
+    void testsTheBattery()
+    {
+        // 12.6 V at rest, a dip to 10.2 V while cranking, 14.2 V running.
+        battery::Test test(100);
+        double t = 100;
+        for (; t < 103; t += 0.2) {
+            test.addVolts(t, 12.6);
+            test.addRpm(t + 0.1, 0);
+        }
+        test.tick(103);
+        QCOMPARE(test.phase(), battery::Phase::Crank);
+        for (; t < 106; t += 0.2) {
+            test.addVolts(t, t < 104 ? 12.5 : 10.2 + (t - 104));
+            test.addRpm(t + 0.1, t < 105.5 ? 200 : 900);
+        }
+        QCOMPARE(test.phase(), battery::Phase::Running);
+        QVERIFY(test.engineStarted());
+        for (; t < 120; t += 0.2) {
+            test.addVolts(t, 14.2);
+            test.addRpm(t + 0.1, 800);
+        }
+        QCOMPARE(test.phase(), battery::Phase::Done);
+        QCOMPARE(test.rest(), 12.6);
+        QCOMPARE(qRound(test.cranking() * 10), 102);
+        QCOMPARE(test.charging(), 14.2);
+        QCOMPARE(battery::Test::restVerdict(test.rest()), battery::Verdict::Ok);
+        QCOMPARE(battery::Test::crankVerdict(test.cranking()), battery::Verdict::Ok);
+        QCOMPARE(battery::Test::chargeVerdict(test.charging()), battery::Verdict::Ok);
+        QCOMPARE(battery::Test::restVerdict(12.3), battery::Verdict::Watch);
+        QCOMPARE(battery::Test::crankVerdict(9.4), battery::Verdict::Bad);
+        QCOMPARE(battery::Test::chargeVerdict(13.2), battery::Verdict::Watch);
+        QCOMPARE(battery::Test::chargeVerdict(-1), battery::Verdict::None);
+
+        // Already running: stops at once. Never started: gives up after a minute.
+        battery::Test running(0);
+        running.addRpm(0.5, 800);
+        QCOMPARE(running.phase(), battery::Phase::Done);
+        QVERIFY(running.engineWasRunning());
+        battery::Test idle(0);
+        idle.addVolts(1, 12.4);
+        idle.tick(70);
+        QCOMPARE(idle.phase(), battery::Phase::Done);
+        QVERIFY(!idle.engineStarted());
+        QCOMPARE(idle.rest(), 12.4);
+        QCOMPARE(idle.cranking(), -1.0);
     }
 
     void alertsOnOverheating()

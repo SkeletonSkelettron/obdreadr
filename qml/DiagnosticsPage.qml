@@ -41,6 +41,7 @@ Page {
             TabButton { text: qsTr("Health") }
             TabButton { text: qsTr("Readiness") }
             TabButton { text: qsTr("Tests") }
+            TabButton { text: qsTr("Battery") }
         }
     }
 
@@ -52,5 +53,6 @@ Page {
         HealthView {}
         ReadinessView {}
         TestsView {}
+        BatteryView {}
     }
 }
