@@ -3,6 +3,7 @@
 #include "background.h"
 #include "obd/elmparser.h"
 #include "health.h"
+#include "language.h"
 #include "obd/dtc.h"
 #include "obd/monitors.h"
 #include "obd/pids.h"
@@ -12,6 +13,7 @@
 
 #include <QCoreApplication>
 #include <QDir>
+#include <QQmlEngine>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -434,6 +436,23 @@ void ObdSession::removeCustomSensor(int index)
     sensors.removeAt(index);
     custom::save(sensors);
     emit customSensorsChanged();
+}
+
+QString ObdSession::language() const
+{
+    return language::setting();
+}
+
+void ObdSession::setLanguage(const QString &code)
+{
+    if (code == language::setting())
+        return;
+    language::setSetting(code);
+    language::apply(code);
+    if (QQmlEngine *engine = qmlEngine(this))
+        engine->retranslate();
+    emit languageChanged();
+    evaluateHealth(); // its texts come from C++
 }
 
 QString ObdSession::reminderDevice() const

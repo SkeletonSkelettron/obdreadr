@@ -38,6 +38,7 @@ qt_add_executable(obdreadr
     src/recording.h src/recording.cpp
     src/customsensors.h src/customsensors.cpp
     src/accel.h src/accel.cpp
+    src/language.h src/language.cpp
     src/recordingviewer.h src/recordingviewer.cpp
     src/fuel.h src/fuel.cpp
     src/fuelmeter.h src/fuelmeter.cpp
@@ -69,6 +70,8 @@ qt_add_qml_module(obdreadr
         qml/RecordingsPage.qml
         qml/RecordingViewPage.qml
         qml/CustomSensorsPage.qml
+        qml/SettingsPage.qml
+        qml/ConfirmButtons.qml
         qml/AccelPage.qml
         qml/HudPage.qml
         qml/LogPage.qml

@@ -1,3 +1,5 @@
+#include "language.h"
+
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQuickStyle>
@@ -10,6 +12,7 @@ int main(int argc, char *argv[])
     QGuiApplication::setApplicationDisplayName(QStringLiteral("OBD Reader"));
 
     QQuickStyle::setStyle(QStringLiteral("Material"));
+    language::apply(language::setting());
 
     QQmlApplicationEngine engine;
     QObject::connect(&engine, &QQmlApplicationEngine::objectCreationFailed, &app,

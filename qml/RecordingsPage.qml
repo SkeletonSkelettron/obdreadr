@@ -199,7 +199,7 @@ Page {
         width: Math.min(page.width - 32, 420)
         modal: true
         title: qsTr("Delete this recording?")
-        standardButtons: Dialog.Yes | Dialog.Cancel
+        footer: ConfirmButtons {}
 
         Label {
             width: deleteDialog.availableWidth

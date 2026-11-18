@@ -14,6 +14,7 @@ Page {
     signal diagnosticsRequested()
     signal recordingsRequested()
     signal accelRequested()
+    signal settingsRequested()
     signal hudRequested()
 
     readonly property bool running: ObdSession.state === ObdSession.Running
@@ -106,6 +107,10 @@ Page {
                         MenuItem {
                             text: qsTr("Head-up display…")
                             onTriggered: page.hudRequested()
+                        }
+                        MenuItem {
+                            text: qsTr("Settings…")
+                            onTriggered: page.settingsRequested()
                         }
                         MenuItem {
                             text: qsTr("Record all sensors")

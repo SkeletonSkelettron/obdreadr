@@ -73,6 +73,7 @@ class ObdSession : public QObject
     Q_PROPERTY(QString reminderDevice READ reminderDevice NOTIFY settingsChanged)
     Q_PROPERTY(QString reminderDeviceName READ reminderDeviceName NOTIFY settingsChanged)
     Q_PROPERTY(QVariantList pairedDevices READ pairedDevices NOTIFY pairedDevicesChanged)
+    Q_PROPERTY(QString language READ language WRITE setLanguage NOTIFY languageChanged)
     Q_PROPERTY(QVariantList healthChecks READ healthChecks NOTIFY healthChanged)
     Q_PROPERTY(bool testsBusy READ testsBusy NOTIFY testsChanged)
     Q_PROPERTY(bool testsRead READ testsRead NOTIFY testsChanged)
@@ -248,6 +249,10 @@ public:
     // Lists the phone's paired devices (asks for the Bluetooth permission).
     Q_INVOKABLE void loadPairedDevices();
 
+    // The UI language: "" the phone's, "en", "ka" (setting `ui/language`).
+    QString language() const;
+    void setLanguage(const QString &code);
+
     // Recordings: one CSV file per connection, kept in the app's storage.
     Q_INVOKABLE void refreshRecordings();
     // Copies a recording to `target` (a file or, on Android, a content:// URL
@@ -271,6 +276,7 @@ signals:
     void focusPidsChanged();
     void accelChanged();
     void pairedDevicesChanged();
+    void languageChanged();
     void healthChanged();
     void testsChanged();
     void recordAllChanged();

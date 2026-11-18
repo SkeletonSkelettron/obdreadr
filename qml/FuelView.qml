@@ -413,22 +413,10 @@ Item {
                         text: qsTr("Shows what the fuel cost; 0 hides it.")
                     }
 
-                    Switch {
-                        Layout.fillWidth: true
+                    Hint {
                         Layout.topMargin: 6
                         visible: ObdSession.backgroundSupported
-                        text: qsTr("Keep counting in the background")
-                        checked: ObdSession.background
-                        onToggled: ObdSession.background = checked
-                    }
-                    Hint {
-                        visible: ObdSession.backgroundSupported
-                        text: qsTr("While connected, a notification keeps the app reading the car with the screen off or another app open. A lost connection is retried for 15 minutes after the car last answered. Leave the dashboard to disconnect.")
-                    }
-                    Button {
-                        visible: ObdSession.backgroundSupported && ObdSession.background && ObdSession.batteryRestricted
-                        text: qsTr("Allow running in the background…")
-                        onClicked: ObdSession.allowBackground()
+                        text: qsTr("Counting in the background is under Settings → Connection.")
                     }
                 }
             }
@@ -442,7 +430,7 @@ Item {
         width: Math.min(parent.width - 32, 420) // the overlay
         modal: true
         title: qsTr("Reset the total?")
-        standardButtons: Dialog.Yes | Dialog.Cancel
+        footer: ConfirmButtons {}
 
         // As the content item, so that the wrapped text does not make a binding loop.
         contentItem: Label {
@@ -460,7 +448,7 @@ Item {
         width: Math.min(parent.width - 32, 420) // the overlay
         modal: true
         title: qsTr("Clear the drives?")
-        standardButtons: Dialog.Yes | Dialog.Cancel
+        footer: ConfirmButtons {}
 
         contentItem: Label {
             wrapMode: Text.Wrap
@@ -477,7 +465,7 @@ Item {
         width: Math.min(parent.width - 32, 420) // the overlay
         modal: true
         title: qsTr("Clear earlier measurements?")
-        standardButtons: Dialog.Yes | Dialog.Cancel
+        footer: ConfirmButtons {}
 
         contentItem: Label {
             wrapMode: Text.Wrap

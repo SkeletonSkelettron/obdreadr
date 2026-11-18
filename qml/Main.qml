@@ -27,7 +27,7 @@ ApplicationWindow {
         id: stack
         anchors.fill: parent
         initialItem: ConnectPage {
-            onCustomSensorsRequested: stack.push(customSensorsPage)
+            onSettingsRequested: stack.push(settingsPage)
             onRecordingsRequested: stack.push(recordingsPage)
             onFuelRequested: stack.push(fuelPage)
         }
@@ -48,6 +48,7 @@ ApplicationWindow {
             onDiagnosticsRequested: stack.push(diagnosticsPage)
             onRecordingsRequested: stack.push(recordingsPage)
             onAccelRequested: stack.push(accelPage)
+            onSettingsRequested: stack.push(settingsPage)
             onHudRequested: stack.push(hudPage)
         }
     }
@@ -85,6 +86,14 @@ ApplicationWindow {
         RecordingsPage {
             onBackRequested: stack.pop()
             onViewRequested: (path) => stack.push(recordingViewPage, { path: path })
+        }
+    }
+
+    Component {
+        id: settingsPage
+        SettingsPage {
+            onBackRequested: stack.pop()
+            onCustomSensorsRequested: stack.push(customSensorsPage)
         }
     }
 

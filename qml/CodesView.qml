@@ -178,7 +178,7 @@ Item {
         width: Math.min(page.width - 32, 420)
         modal: true
         title: qsTr("Clear the fault codes?")
-        standardButtons: Dialog.Yes | Dialog.Cancel
+        footer: ConfirmButtons {}
 
         // As the content item, so that the wrapped text does not make a binding loop.
         contentItem: Label {

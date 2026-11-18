@@ -11,47 +11,27 @@ Page {
 
     signal recordingsRequested()
     signal fuelRequested()
-    signal customSensorsRequested()
-
-    Dialog {
-        id: reminderDialog
-        parent: Overlay.overlay
-        anchors.centerIn: parent
-        width: Math.min(parent.width - 32, 420) // the overlay
-        height: Math.min(parent.height - 64, implicitHeight)
-        modal: true
-        title: qsTr("The car's Bluetooth")
-        standardButtons: Dialog.Close
-
-        contentItem: ListView {
-            implicitHeight: contentHeight
-            clip: true
-            model: [{ name: qsTr("Off"), address: "" }].concat(ObdSession.pairedDevices)
-            delegate: RadioDelegate {
-                required property var modelData
-                width: ListView.view.width
-                text: modelData.address !== "" ? modelData.name + "  ·  " + modelData.address : modelData.name
-                checked: modelData.address === ObdSession.reminderDevice
-                onClicked: {
-                    ObdSession.setReminderDevice(modelData.address, modelData.name)
-                    reminderDialog.close()
-                }
-            }
-        }
-    }
+    signal settingsRequested()
 
     // Connect to the last adapter by itself, once per app start.
     // (Later, so that the stack can open the dashboard when it connects.)
     Component.onCompleted: Qt.callLater(() => ObdSession.connectOnStart())
 
     header: ToolBar {
-        Label {
+        RowLayout {
             anchors.fill: parent
-            leftPadding: 16
-            verticalAlignment: Text.AlignVCenter
-            text: qsTr("OBD Reader")
-            font.pixelSize: 20
-            font.bold: true
+            spacing: 0
+            Label {
+                Layout.fillWidth: true
+                leftPadding: 16
+                text: qsTr("OBD Reader")
+                font.pixelSize: 20
+                font.bold: true
+            }
+            ToolButton {
+                text: qsTr("Settings")
+                onClicked: page.settingsRequested()
+            }
         }
     }
 
@@ -264,97 +244,6 @@ Page {
                     Button {
                         text: qsTr("Fuel…")
                         onClicked: page.fuelRequested()
-                    }
-                }
-            }
-
-            // Options --------------------------------------------------------
-            Pane {
-                Layout.fillWidth: true
-                Material.elevation: 2
-
-                ColumnLayout {
-                    anchors.fill: parent
-                    spacing: 0
-
-                    Label {
-                        text: qsTr("Options")
-                        font.pixelSize: 16
-                        font.bold: true
-                    }
-                    Switch {
-                        Layout.fillWidth: true
-                        text: qsTr("Connect to the last adapter when the app starts")
-                        checked: ObdSession.autoConnect
-                        onToggled: ObdSession.autoConnect = checked
-                    }
-                    Switch {
-                        Layout.fillWidth: true
-                        visible: ObdSession.backgroundSupported
-                        text: qsTr("Keep the screen on while connected")
-                        checked: ObdSession.keepScreenOn
-                        onToggled: ObdSession.keepScreenOn = checked
-                    }
-                    Switch {
-                        Layout.fillWidth: true
-                        text: qsTr("Alerts while driving")
-                        checked: ObdSession.alertsEnabled
-                        onToggled: ObdSession.alertsEnabled = checked
-                    }
-                    Label {
-                        Layout.fillWidth: true
-                        visible: ObdSession.alertsEnabled
-                        wrapMode: Text.Wrap
-                        opacity: 0.7
-                        font.pixelSize: 12
-                        text: qsTr("Overheating (108 °C), a battery that stops charging or overcharges, the check engine light, low fuel and, if set, an engine speed limit.")
-                    }
-                    RowLayout {
-                        Layout.fillWidth: true
-                        visible: ObdSession.alertsEnabled
-                        Label {
-                            Layout.fillWidth: true
-                            wrapMode: Text.Wrap
-                            text: ObdSession.alertRpm > 0 ? qsTr("Engine speed alert") : qsTr("Engine speed alert: off")
-                        }
-                        SpinBox {
-                            from: 0
-                            to: 9000
-                            stepSize: 250
-                            editable: true
-                            value: ObdSession.alertRpm
-                            onValueModified: ObdSession.alertRpm = value
-                        }
-                    }
-                    Label {
-                        Layout.fillWidth: true
-                        Layout.topMargin: 6
-                        visible: ObdSession.backgroundSupported
-                        wrapMode: Text.Wrap
-                        text: ObdSession.reminderDevice !== ""
-                              ? qsTr("Reminder when %1 connects").arg(ObdSession.reminderDeviceName || ObdSession.reminderDevice)
-                              : qsTr("Reminder when the car's Bluetooth connects: off")
-                    }
-                    Label {
-                        Layout.fillWidth: true
-                        visible: ObdSession.backgroundSupported
-                        wrapMode: Text.Wrap
-                        opacity: 0.7
-                        font.pixelSize: 12
-                        text: qsTr("Android does not let an app open itself. Pick the car's own Bluetooth (the stereo, not the OBD adapter): when it connects, a notification opens this app, which then connects by itself.")
-                    }
-                    Button {
-                        visible: ObdSession.backgroundSupported
-                        text: qsTr("Choose the car's Bluetooth…")
-                        onClicked: {
-                            ObdSession.loadPairedDevices()
-                            reminderDialog.open()
-                        }
-                    }
-                    Button {
-                        Layout.topMargin: 6
-                        text: qsTr("Custom sensors…")
-                        onClicked: page.customSensorsRequested()
                     }
                 }
             }
