@@ -326,6 +326,33 @@ QHash<quint8, QByteArray> mode01Values(const QStringList &lines, const QHash<qui
     return values;
 }
 
+int mode01Responders(const QStringList &lines, quint8 pid)
+{
+    int count = 0;
+    for (const QByteArray &message : messages(lines)) {
+        if (message.size() > 2 && quint8(message.at(0)) == 0x41 && quint8(message.at(1)) == pid)
+            ++count;
+    }
+    return count;
+}
+
+int mode01AnswerBytes(const QList<int> &dataLengths)
+{
+    int bytes = 1; // 41
+    for (int length : dataLengths)
+        bytes += 1 + length;
+    return bytes;
+}
+
+bool takesResponseCount(const QStringList &lines)
+{
+    if (!errorIn(lines).isEmpty())
+        return false;
+    const QList<QByteArray> answers = messages(lines);
+    return answers.size() == 1 && answers.first().size() == 6
+           && answers.first().startsWith(QByteArray("\x41\x00", 2));
+}
+
 QString parseVin(const QStringList &lines)
 {
     bool framed = false;

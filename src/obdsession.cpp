@@ -48,7 +48,8 @@ constexpr int kMaxLogLines = 500;
 constexpr int kMaxBatch = 6;               // PIDs per request, the OBD limit on CAN
 constexpr double kBatchDueRatio = 0.5;     // others join a request once half due
 constexpr int kBatchMissesBeforeSingle = 2;
-constexpr int kBatchFailuresBeforeOff = 3;
+constexpr int kBatchFailuresBeforeOff = 3; // per stage: long answers, then single frames
+constexpr int kBatchTimeoutMs = 1000;      // answers normally take 100-200 ms
 constexpr int kReconnectDelayMs = 15000;        // between automatic reconnects
 constexpr qint64 kReconnectForMs = 15 * 60000;  // since the car last answered
 constexpr int kServiceRefreshMs = 5000;
@@ -766,7 +767,9 @@ void ObdSession::startTransport(const QString &name, TransportFactory factory, b
     m_vin.clear();
     m_supported.clear();
     m_batching = false;
+    m_batchSingleFrame = false;
     m_batchFailures = 0;
+    m_responseCount = false;
     m_paused = false;
     emit pausedChanged();
     emit infoChanged();
@@ -938,6 +941,15 @@ void ObdSession::onOpened()
                     return;
                 m_elm.setCanHeaderLength(headerChars);
                 m_batching = true;
+                // With headers each ECU's answer is told apart, so the number
+                // of answers to expect can be learned and sent with requests.
+                m_elm.send(QStringLiteral("01001"), [this, generation](const Elm327::Reply &probe) {
+                    if (!isCurrent(generation))
+                        return;
+                    m_responseCount = elm::takesResponseCount(probe.lines);
+                    appendLog(m_responseCount ? tr("The adapter takes response counts: requests end sooner")
+                                              : tr("The adapter does not take response counts"));
+                });
             });
         });
         setState(Discovering);
@@ -1158,14 +1170,21 @@ void ObdSession::pollNext()
         return;
     }
     if (m_batching && canBatch(m_sensors->entry(best))) {
-        // The most overdue sensor, and the others that are at least half due.
+        // The most overdue sensor, and the others that are at least half due;
+        // after long answers failed, only as many as one CAN frame carries.
         std::sort(due.begin(), due.end(), [](const auto &a, const auto &b) { return a.first > b.first; });
         QList<int> rows = {best};
+        QList<int> lengths = {m_sensors->entry(best).dataLength};
         for (const auto &[ratio, row] : std::as_const(due)) {
             if (rows.size() >= kMaxBatch)
                 break;
-            if (row != best)
-                rows << row;
+            if (row == best)
+                continue;
+            const int length = m_sensors->entry(row).dataLength;
+            if (m_batchSingleFrame && elm::mode01AnswerBytes(lengths + QList<int>{length}) > elm::kSingleFrameBytes)
+                continue;
+            rows << row;
+            lengths << length;
         }
         if (rows.size() > 1) {
             pollBatch(rows);
@@ -1183,11 +1202,17 @@ bool ObdSession::canBatch(const SensorModel::Entry &e) const
 void ObdSession::pollBatch(const QList<int> &rows)
 {
     QString command = QStringLiteral("01");
+    int responders = 0;
     for (int row : rows) {
         SensorModel::Entry &e = m_sensors->entry(row);
         e.lastPollMs = m_clock.elapsed();
         command += obd::hex2(quint8(e.pid));
+        responders = std::max(responders, e.responders);
     }
+    // How the adapter counts the frames of a longer answer is not known,
+    // so the count goes only with answers of one frame per ECU.
+    if (m_batchSingleFrame)
+        command += responseCount(responders);
     const quint64 generation = m_generation;
     m_polling = true;
     m_elm.send(command, [this, generation, rows](const Elm327::Reply &reply) {
@@ -1197,7 +1222,14 @@ void ObdSession::pollBatch(const QList<int> &rows)
         handleBatchReply(rows, reply);
         if (m_state == Running)
             QMetaObject::invokeMethod(this, &ObdSession::pollNext, Qt::QueuedConnection);
-    });
+    }, kBatchTimeoutMs);
+}
+
+QString ObdSession::responseCount(int responders) const
+{
+    if (!m_responseCount || responders < 1 || responders > 15)
+        return {};
+    return QString::number(responders, 16).toUpper();
 }
 
 void ObdSession::handleBatchReply(const QList<int> &rows, const Elm327::Reply &reply)
@@ -1222,11 +1254,19 @@ void ObdSession::handleBatchReply(const QList<int> &rows, const Elm327::Reply &r
         }
     }
     if (missing.size() == rows.size()) {
-        // Nothing usable: the car may not take several PIDs at once. The
-        // sensors themselves are not blamed; they are read singly later.
+        // Nothing usable: the car or the adapter may not take several PIDs
+        // at once, or the adapter may fail answers longer than one CAN
+        // frame, so those are tried next. The sensors themselves are not
+        // blamed; they are read singly later.
         if (++m_batchFailures >= kBatchFailuresBeforeOff) {
-            m_batching = false;
-            appendLog(tr("Requests for several sensors failed; reading one sensor at a time"));
+            m_batchFailures = 0;
+            if (!m_batchSingleFrame) {
+                m_batchSingleFrame = true;
+                appendLog(tr("Long requests for several sensors failed; trying shorter ones"));
+            } else {
+                m_batching = false;
+                appendLog(tr("Requests for several sensors failed; reading one sensor at a time"));
+            }
         }
         countFailure(reply.error);
         return;
@@ -1245,7 +1285,7 @@ void ObdSession::pollEntry(int row)
     e.lastPollMs = m_clock.elapsed();
     const QString command = e.isCustom() ? e.command
                             : e.pid < 0  ? QString::fromLatin1(kVoltageKey)
-                                         : QStringLiteral("01") + obd::hex2(quint8(e.pid));
+                                         : QStringLiteral("01") + obd::hex2(quint8(e.pid)) + responseCount(e.responders);
     const quint64 generation = m_generation;
     m_polling = true;
     // A custom sensor with a CAN header: address that ECU for this one
@@ -1276,9 +1316,12 @@ void ObdSession::handlePollReply(int row, const Elm327::Reply &reply)
         value = elm::parseVoltage(reply.lines);
     } else if (const auto payload = elm::mode01Payload(reply.lines, quint8(e.pid))) {
         value = obd::decode(quint8(e.pid), *payload);
-        // Its length, to find it in answers to several PIDs at once.
+        // Its length, to find it in answers to several PIDs at once, and
+        // how many ECUs answer it, learned from a request without a count.
         if (value && m_batching)
             e.dataLength = int(payload->size());
+        if (value && m_canHeaderChars > 0 && e.responders == 0)
+            e.responders = elm::mode01Responders(reply.lines, quint8(e.pid));
     }
 
     if (value) {

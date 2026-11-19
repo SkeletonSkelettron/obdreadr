@@ -111,8 +111,17 @@ QString SimEcu::atCommand(const QString &cmd)
     return QStringLiteral("?");
 }
 
-QString SimEcu::obdCommand(const QString &cmd, double t)
+QString SimEcu::obdCommand(const QString &request, double t)
 {
+    // A last, odd hex digit is the number of answers to wait for.
+    QString cmd = request;
+    m_maxAnswers = 0;
+    if (cmd.size() % 2 != 0 && cmd.size() > 2) {
+        m_maxAnswers = cmd.right(1).toInt(nullptr, 16);
+        cmd.chop(1);
+        if (m_maxAnswers == 0)
+            return QStringLiteral("?");
+    }
     bool ok = false;
     cmd.toULongLong(&ok, 16);
     if (!ok || cmd.size() < 2 || cmd.size() % 2 != 0)
@@ -219,8 +228,10 @@ QString SimEcu::canAnswer(const QByteArray &payload) const
     return reply({{kEngine, payload}});
 }
 
-QString SimEcu::reply(const QList<Message> &messages) const
+QString SimEcu::reply(const QList<Message> &answers) const
 {
+    // With a count the adapter stops listening once that many are in.
+    const QList<Message> messages = m_maxAnswers > 0 ? answers.mid(0, m_maxAnswers) : answers;
     const QString gap = m_spaces ? QStringLiteral(" ") : QString();
     QStringList lines;
     if (!m_headers) {

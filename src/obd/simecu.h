@@ -26,7 +26,9 @@ public:
 
 private:
     QString atCommand(const QString &cmd);
-    QString obdCommand(const QString &cmd, double t);
+    // An OBD request, with or without a last digit for the number of
+    // answers to wait for ("010C1"), which `reply` then keeps to.
+    QString obdCommand(const QString &request, double t);
     std::optional<QByteArray> pidData(quint8 pid, double t) const;
     struct Message {
         quint16 sender; // CAN identifier
@@ -56,4 +58,5 @@ private:
     bool m_headers = false;
     bool m_searched = false;
     QString m_header; // AT SH: the ECU addressed, empty for all
+    int m_maxAnswers = 0; // of the request being answered, 0 for all
 };

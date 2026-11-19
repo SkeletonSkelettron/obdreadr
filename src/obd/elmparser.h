@@ -62,6 +62,26 @@ QStringList stripCanHeaders(const QStringList &lines, int headerChars);
 // several ECUs answer a PID, the first one counts.
 QHash<quint8, QByteArray> mode01Values(const QStringList &lines, const QHash<quint8, int> &lengths);
 
+// How many ECUs answered a mode 01 request for `pid`: its messages (one
+// per ECU) starting "41 <pid>".
+int mode01Responders(const QStringList &lines, quint8 pid);
+
+// Bytes a CAN frame carries of a message; a longer answer takes several
+// frames, which the adapter must ask for (ISO-TP flow control).
+constexpr int kSingleFrameBytes = 7;
+
+// Size of an ECU's answer to a mode 01 request for PIDs with these data
+// lengths: "41", then each PID and its data.
+int mode01AnswerBytes(const QList<int> &dataLengths);
+
+// A recent ELM327 takes the number of answers to wait for as one hex digit
+// after the request ("01 0C 1") and returns as soon as they are in, instead
+// of waiting for more until its timeout. Whether the answer to
+// "0100" + "1" shows an adapter that understood it: exactly one answer to
+// PID 00 ("?" from an older chip, or a second PID 10 when the digit was
+// read as part of the request, are no).
+bool takesResponseCount(const QStringList &lines);
+
 // The vehicle identification number from a "09 02" response (CAN multi-frame
 // or older one-line-per-message formats), or an empty string.
 QString parseVin(const QStringList &lines);

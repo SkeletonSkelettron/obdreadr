@@ -310,6 +310,8 @@ private:
     // CAN cars: up to six sensors in one request.
     bool canBatch(const SensorModel::Entry &e) const;
     void pollBatch(const QList<int> &rows);
+    // The digit telling the adapter how many answers to wait for, or empty.
+    QString responseCount(int responders) const;
     void handleBatchReply(const QList<int> &rows, const Elm327::Reply &reply);
     void recordValue(int row, double t, double value);
     void countFailure(const QString &error);
@@ -401,7 +403,9 @@ private:
     bool m_paused = false;
     bool m_polling = false;
     bool m_batching = false; // CAN with headers on: several PIDs per request
+    bool m_batchSingleFrame = false; // only as many PIDs as answer in one CAN frame
     int m_batchFailures = 0;
+    bool m_responseCount = false; // the adapter takes "010C1" (see elm::takesResponseCount)
     int m_failStreak = 0;
     int m_samples = 0;
     double m_sampleRate = 0;

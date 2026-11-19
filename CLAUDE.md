@@ -56,15 +56,16 @@ from a real car yet. Things most likely to need a fix once tried:
   screen off. Not reported yet: whether the notification appears and whether
   an automatic reconnect works.
 - **Several PIDs per request** (`ObdSession::pollBatch`, `elm::stripCanHeaders`):
-  never met a real car. On CAN the session turns headers on (`ATH1`) after
-  `ATDPN`, and every answer is converted back to the header-less format, so
-  if a real adapter prints headers differently, single polls could break too.
-  The first real-car recording (17 Nov 2026, before this) showed ~6 requests/s
-  for 34 sensors, so each sensor every ~3 s; the demo car went from ~24 to ~95
-  readings/s. The 18 Nov recordings still show ~6.7 readings/s and not one
-  combined reading (those share a timestamp): either the phone had v0.4.0 or
-  the car refused; the Log says which ("Polling started, up to 6 sensors per
-  request" / "Requests for several sensors failed").
+  the owner's car read fine one PID at a time with headers on: 6.7
+  requests/s, about 143 ms each, so each fast sensor every ~2.8 s (18 and
+  19 Nov 2026 recordings). The 19 Nov one (v0.5.0, adapter "OBDII", 33
+  sensors) shows why there was not one combined reading (those share a
+  timestamp): every combined request timed out (a 10.7 s pause after the
+  first round: three times 2 s plus the 1.5 s drain) and combining switched
+  itself off. After that came the fallback to batches that fit in one CAN
+  frame and the response count (below); neither has met the car yet. The
+  Log says which way it went ("trying shorter ones", "response counts").
+  The demo car went from ~24 to ~95 readings/s with batches.
 - **Fuel estimates** (`src/fuel.cpp`): the MAF and speed-density ones ignore
   deceleration fuel cut-off, so they read a little high; the correction
   setting is there for that. Speed-density assumes 85 % volumetric efficiency.
@@ -95,7 +96,7 @@ QML (qml/): Main → ConnectPage → DashboardPage (5 tabs) → DiagnosticsPage,
 | `src/obd/elmparser.*` | ELM327 text: lines, errors, payloads, support masks, ISO-TP messages, CAN headers, multi-PID answers, VIN |
 | `src/obd/dtc.*` | Fault codes (modes 03/07/0A) and their descriptions |
 | `src/obd/monitors.*` | Readiness (PID 01) and mode 06 test results |
-| `src/obd/simecu.*` | Simulated adapter + car (engine 7E8, transmission 7E9), headers on or off, multi-PID: demo mode and the tests |
+| `src/obd/simecu.*` | Simulated adapter + car (engine 7E8, transmission 7E9), headers on or off, multi-PID, response counts: demo mode and the tests |
 | `src/transport/*` | Byte pipes; Bluetooth ones only built when Qt Bluetooth exists |
 | `src/elm327.*` | Command queue with timeouts; after a timeout it drains the late answer; strips CAN headers once set |
 | `src/obdsession.*` | The state machine and everything QML calls |
@@ -133,9 +134,18 @@ Things worth knowing before changing them:
   most overdue sensor goes out with up to five others at least half due
   (`01 0C 0D 10 ...`), split by `elm::mode01Values`, which drops any message
   that does not split exactly. A sensor missing twice from combined answers
-  is read on its own; three combined requests with nothing usable turn
-  combining off for the connection. Misses there never make a sensor
-  unavailable.
+  is read on its own. Three combined requests with nothing usable limit
+  them to PIDs whose answer fits in one CAN frame (`elm::mode01AnswerBytes`
+  at most 7: usually two or three PIDs, no ISO-TP flow control), and three
+  more turn combining off for the connection. Combined requests time out
+  after 1 s. Misses there never make a sensor unavailable.
+- **Response count.** After `ATH1` the session sends `01001`; when
+  `elm::takesResponseCount` sees exactly one answer, single requests and
+  single-frame batches end with a hex digit: the number of ECUs that
+  answered the PID on its own (`Entry::responders`, learned from its first
+  answer), so the adapter returns as soon as those are in instead of
+  waiting out its timeout. Long batches go without it, since how an adapter
+  counts the frames of a multi-frame answer is not known.
 - A sensor answering NO DATA six times in a row becomes unavailable; twelve
   failures in a row across all sensors ends the session.
 - **Charts** repaint only while visible (`ChartBase::requestRepaint`); the

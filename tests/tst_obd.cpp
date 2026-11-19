@@ -707,6 +707,60 @@ private slots:
         QVERIFY(elm::supportedMask(askCan(QStringLiteral("0100"), 30), 0x00));
     }
 
+    void countsResponses()
+    {
+        SimEcu ecu;
+        for (const char *command : {"ATE0", "ATS0", "ATH1"})
+            ask(ecu, QString::fromLatin1(command));
+        const auto askCan = [&](const QString &command) {
+            return elm::stripCanHeaders(ask(ecu, command, 30), 3);
+        };
+        // Both ECUs answer PID 00 and the speed, only the engine the rpm.
+        QCOMPARE(elm::mode01Responders(askCan(QStringLiteral("0100")), 0x00), 2);
+        QCOMPARE(elm::mode01Responders(askCan(QStringLiteral("010D")), 0x0D), 2);
+        QCOMPARE(elm::mode01Responders(askCan(QStringLiteral("010C")), 0x0C), 1);
+        QCOMPARE(elm::mode01Responders({QStringLiteral("NO DATA")}, 0x0C), 0);
+
+        // The probe: one answer when the adapter keeps to the count.
+        QVERIFY(!elm::takesResponseCount(askCan(QStringLiteral("0100"))));
+        QVERIFY(elm::takesResponseCount(askCan(QStringLiteral("01001"))));
+        QVERIFY(!elm::takesResponseCount({QStringLiteral("?")}));
+        QVERIFY(!elm::takesResponseCount({QStringLiteral("NO DATA")}));
+        // "01 00 10": the digit read as part of the request.
+        QVERIFY(!elm::takesResponseCount({QStringLiteral("4100BE1FA813"), QStringLiteral("4110")}));
+        QVERIFY(!elm::takesResponseCount({QStringLiteral("4100BE1FA81310FFFF")}));
+
+        // A request with a count reads the same, up to that many answers.
+        const auto speed = elm::mode01Payload(askCan(QStringLiteral("010D1")), 0x0D);
+        QVERIFY(speed);
+        QCOMPARE(*speed, *elm::mode01Payload(askCan(QStringLiteral("010D")), 0x0D));
+        QCOMPARE(elm::mode01Responders(askCan(QStringLiteral("010D1")), 0x0D), 1);
+        QCOMPARE(elm::mode01Responders(askCan(QStringLiteral("010D2")), 0x0D), 2);
+        QCOMPARE(elm::errorIn(ask(ecu, QStringLiteral("010D0"))), QStringLiteral("?"));
+    }
+
+    void keepsCombinedAnswersToOneFrame()
+    {
+        // 41, then each PID and its data: seven bytes fit in one CAN frame.
+        QCOMPARE(elm::mode01AnswerBytes({2}), 4);
+        QCOMPARE(elm::mode01AnswerBytes({2, 1}), 6);
+        QCOMPARE(elm::mode01AnswerBytes({1, 1, 1}), elm::kSingleFrameBytes);
+        QVERIFY(elm::mode01AnswerBytes({2, 2}) <= elm::kSingleFrameBytes);
+        QVERIFY(elm::mode01AnswerBytes({2, 1, 1}) > elm::kSingleFrameBytes);
+
+        // Such a request comes back as single frames: no flow control needed.
+        SimEcu ecu;
+        for (const char *command : {"ATE0", "ATS0", "ATH1"})
+            ask(ecu, QString::fromLatin1(command));
+        const QStringList frames = ask(ecu, QStringLiteral("010C0D2"), 30);
+        QCOMPARE(frames.size(), 2); // engine and transmission, one frame each
+        for (const QString &frame : frames)
+            QVERIFY2(!frame.mid(3, 1).startsWith(QLatin1Char('1')), qPrintable(frame)); // no first frame
+        const QHash<quint8, QByteArray> values =
+            elm::mode01Values(elm::stripCanHeaders(frames, 3), {{0x0C, 2}, {0x0D, 1}});
+        QCOMPARE(values.size(), 2);
+    }
+
     void readsSimulatedFreezeFrame()
     {
         SimEcu ecu;

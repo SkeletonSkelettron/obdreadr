@@ -6,6 +6,7 @@ has added new strings; lists the ones that still need a translation.
     python i18n/fill_ts.py
 """
 import os
+import re
 import sys
 import xml.etree.ElementTree as ET
 
@@ -37,9 +38,13 @@ def main():
     tree.write(TS, encoding='utf-8', xml_declaration=True)
     with open(TS, encoding='utf-8') as f:
         content = f.read()
+    # Quotes in text escaped the way lupdate writes them, so the file only
+    # changes where a translation did.
+    content = re.sub(r'>([^<]*)<', lambda m: '>' + m.group(1).replace("'", '&apos;').replace('"', '&quot;') + '<',
+                     content)
     with open(TS, 'w', encoding='utf-8', newline='\n') as f:
         f.write(content.replace("<?xml version='1.0' encoding='utf-8'?>",
-                                '<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE TS>'))
+                                '<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE TS>').rstrip('\n') + '\n')
     for name, source in missing:
         print('missing:', name, '|', source)
     print(len(missing), 'missing')

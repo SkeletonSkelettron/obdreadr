@@ -37,6 +37,7 @@ public:
         qint64 lastPollMs = -1000000;
         int dataLength = -1;   // bytes in its answer, once read on its own
         int batchMisses = 0;   // missing from answers to several PIDs at once
+        int responders = 0;    // ECUs that answered it on its own (CAN), 0 until read
         SensorSeries *series = nullptr;
         // A custom sensor (pid -100 and below): its request, CAN header and
         // compiled formula (custom::Evaluator).

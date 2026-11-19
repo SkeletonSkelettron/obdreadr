@@ -1620,6 +1620,14 @@ Switch the engine off and leave the ignition on.</source>
         <translation>მანქანამ არ უპასუხა (%1). ანთება ჩართულია?</translation>
     </message>
     <message>
+        <source>The adapter takes response counts: requests end sooner</source>
+        <translation>ადაპტერი იღებს პასუხების რაოდენობას: მოთხოვნები უფრო მალე სრულდება</translation>
+    </message>
+    <message>
+        <source>The adapter does not take response counts</source>
+        <translation>ადაპტერი პასუხების რაოდენობას არ იღებს</translation>
+    </message>
+    <message>
         <source>Battery voltage (adapter)</source>
         <translation>აკუმულატორის ძაბვა (ადაპტერი)</translation>
     </message>
@@ -1649,6 +1657,10 @@ Switch the engine off and leave the ignition on.</source>
     <message>
         <source>Polling started</source>
         <translation>კითხვა დაიწყო</translation>
+    </message>
+    <message>
+        <source>Long requests for several sensors failed; trying shorter ones</source>
+        <translation>რამდენიმე სენსორის გრძელი მოთხოვნა ვერ მოხერხდა; ვცდი უფრო მოკლეს</translation>
     </message>
     <message>
         <source>Requests for several sensors failed; reading one sensor at a time</source>
