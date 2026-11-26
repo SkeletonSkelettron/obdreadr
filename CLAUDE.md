@@ -22,8 +22,9 @@ tab, background service with automatic reconnect) and v0.5.0 (PLAN.md's
 batch: auto-connect, alerts, freeze frame, drives with cost, battery test,
 recording viewer, custom sensors, 0–100 timer and HUD, car Bluetooth
 reminder, Settings page, Georgian), v0.5.1 (smart charging in the
-charging check and alert) and v0.5.2 (shorter combined requests, response
-counts). Every push to
+charging check and alert), v0.5.2 (shorter combined requests, response
+counts) and v0.5.3 (Faster requests setting that turns itself off, unplug
+hint for a silent adapter). Every push to
 `master` also refreshes the rolling "continuous" pre-release, which the owner
 installs on the phone from
 `https://github.com/SkeletonSkelettron/obdreadr/releases/download/continuous/obdreadr-arm64-v8a.apk`.
