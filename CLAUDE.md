@@ -64,9 +64,14 @@ from a real car yet. Things most likely to need a fix once tried:
   timestamp): every combined request timed out (a 10.7 s pause after the
   first round: three times 2 s plus the 1.5 s drain) and combining switched
   itself off. After that came the fallback to batches that fit in one CAN
-  frame and the response count (below); neither has met the car yet. The
-  Log says which way it went ("trying shorter ones", "response counts").
-  The demo car went from ~24 to ~95 readings/s with batches.
+  frame and the response count (below). With v0.5.2 the owner's adapter
+  then stopped connecting while still visible over Bluetooth: most likely
+  its chip hung on one of these and, powered by the car, stayed hung. Since
+  v0.5.3 they sit behind the "Faster requests" setting, which turns itself
+  off when the adapter goes quiet (see Response count below). Not yet known
+  which request it was; the Log keeps "trying shorter ones" / "response
+  counts" and the timeouts. The demo car went from ~24 to ~95 readings/s
+  with batches.
 - **Fuel estimates** (`src/fuel.cpp`): the MAF and speed-density ones ignore
   deceleration fuel cut-off, so they read a little high; the correction
   setting is there for that. Speed-density assumes 85 % volumetric efficiency.
@@ -147,6 +152,15 @@ Things worth knowing before changing them:
   answer), so the adapter returns as soon as those are in instead of
   waiting out its timeout. Long batches go without it, since how an adapter
   counts the frames of a multi-frame answer is not known.
+- **Faster requests** (`fastRequests`, setting `connect/fast`, default on):
+  without it the session never sends `ATH1`, so no headers, batches, probe
+  or counts (the v0.4.0 way). It goes off by itself when twelve failures in
+  a row end a connection that used it with `TIMEOUT` (no answer at all, not
+  NO DATA as when the engine stops), and when the adapter answers neither
+  `ATZ` nor `ATE0` at the start; that second case fails at once with "Unplug
+  it from the car for a few seconds", since a hung clone stays hung while
+  the OBD port powers it. The Log is cleared only on a connection the user
+  starts, so automatic reconnects keep what went wrong.
 - A sensor answering NO DATA six times in a row becomes unavailable; twelve
   failures in a row across all sensors ends the session.
 - **Charts** repaint only while visible (`ChartBase::requestRepaint`); the
@@ -225,7 +239,7 @@ Things worth knowing before changing them:
   background, reminder, recording, alerts, custom sensors, language) is on
   `SettingsPage.qml`, reached from the start page's header and the dashboard
   menu.
-- Settings (QSettings): `ui/language`, `wifi/*`, `bt/*`, `connect/auto`, `connect/last`,
+- Settings (QSettings): `ui/language`, `wifi/*`, `bt/*`, `connect/auto`, `connect/last`, `connect/fast`,
   `alerts/enabled`, `alerts/rpm`, `custom/sensors`, `accel/best100`,
   `reminder/address`, `reminder/name`,
   `sensors/active`, `sensors/pinned`, `view/window`, `view/tab`,

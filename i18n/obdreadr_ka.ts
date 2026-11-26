@@ -1604,6 +1604,14 @@ Switch the engine off and leave the ignition on.</source>
         <translation>ELM327 ადაპტერს ვამზადებ…</translation>
     </message>
     <message>
+        <source>Faster requests turned off: the adapter stopped answering while they were on</source>
+        <translation>უფრო სწრაფი მოთხოვნები გამოირთო: მათი ჩართვისას ადაპტერმა პასუხი შეწყვიტა</translation>
+    </message>
+    <message>
+        <source>The adapter does not answer. Unplug it from the car for a few seconds, then try again.</source>
+        <translation>ადაპტერი არ პასუხობს. რამდენიმე წამით გამოაძრეთ მანქანიდან და ისევ სცადეთ.</translation>
+    </message>
+    <message>
         <source>Battery: %1 V</source>
         <translation>აკუმულატორი: %1 V</translation>
     </message>
@@ -1677,6 +1685,10 @@ Switch the engine off and leave the ignition on.</source>
     <message>
         <source>0–100 km/h in %1 s</source>
         <translation>0–100 კმ/სთ %1 წამში</translation>
+    </message>
+    <message>
+        <source>The adapter stopped answering. Faster requests are now off; if it does not come back, unplug it from the car for a few seconds.</source>
+        <translation>ადაპტერმა პასუხი შეწყვიტა. უფრო სწრაფი მოთხოვნები ახლა გამორთულია; თუ არ აღდგა, რამდენიმე წამით გამოაძრეთ მანქანიდან.</translation>
     </message>
     <message>
         <source>no valid data</source>
@@ -2423,6 +2435,14 @@ Switch the engine off and leave the ignition on.</source>
     <message>
         <source>Connect to the last adapter when the app starts</source>
         <translation>აპის გახსნისას ბოლო ადაპტერთან დაკავშირება</translation>
+    </message>
+    <message>
+        <source>Faster requests</source>
+        <translation>უფრო სწრაფი მოთხოვნები</translation>
+    </message>
+    <message>
+        <source>On CAN cars: several sensors in one request, and telling the adapter how many answers to wait for. Some cheap adapters hang on these; it turns itself off when the adapter stops answering. Applies on the next connection.</source>
+        <translation>CAN მანქანებზე: რამდენიმე სენსორი ერთ მოთხოვნაში და ადაპტერისთვის იმის თქმა, რამდენ პასუხს დაელოდოს. ზოგი იაფი ადაპტერი ამაზე იჭედება; როცა ადაპტერი პასუხს წყვეტს, ეს თავისით ითიშება. მოქმედებს შემდეგი დაკავშირებიდან.</translation>
     </message>
     <message>
         <source>Keep the screen on while connected</source>

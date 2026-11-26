@@ -483,6 +483,15 @@ T = {
     "Long requests for several sensors failed; trying shorter ones": "რამდენიმე სენსორის გრძელი მოთხოვნა ვერ მოხერხდა; ვცდი უფრო მოკლეს",
     "The adapter takes response counts: requests end sooner": "ადაპტერი იღებს პასუხების რაოდენობას: მოთხოვნები უფრო მალე სრულდება",
     "The adapter does not take response counts": "ადაპტერი პასუხების რაოდენობას არ იღებს",
+    "Faster requests": "უფრო სწრაფი მოთხოვნები",
+    "On CAN cars: several sensors in one request, and telling the adapter how many answers to wait for. Some cheap adapters hang on these; it turns itself off when the adapter stops answering. Applies on the next connection.":
+        "CAN მანქანებზე: რამდენიმე სენსორი ერთ მოთხოვნაში და ადაპტერისთვის იმის თქმა, რამდენ პასუხს დაელოდოს. ზოგი იაფი ადაპტერი ამაზე იჭედება; როცა ადაპტერი პასუხს წყვეტს, ეს თავისით ითიშება. მოქმედებს შემდეგი დაკავშირებიდან.",
+    "The adapter does not answer. Unplug it from the car for a few seconds, then try again.":
+        "ადაპტერი არ პასუხობს. რამდენიმე წამით გამოაძრეთ მანქანიდან და ისევ სცადეთ.",
+    "Faster requests turned off: the adapter stopped answering while they were on":
+        "უფრო სწრაფი მოთხოვნები გამოირთო: მათი ჩართვისას ადაპტერმა პასუხი შეწყვიტა",
+    "The adapter stopped answering. Faster requests are now off; if it does not come back, unplug it from the car for a few seconds.":
+        "ადაპტერმა პასუხი შეწყვიტა. უფრო სწრაფი მოთხოვნები ახლა გამორთულია; თუ არ აღდგა, რამდენიმე წამით გამოაძრეთ მანქანიდან.",
     "%1: missing from combined requests, read on its own": "%1: გაერთიანებულ მოთხოვნებში არ ჩანს, ცალკე იკითხება",
     "%1: no data, removed from the dashboard": "%1: მონაცემი არ არის, დაფიდან მოიხსნა",
     "0–100 km/h in %1 s": "0–100 კმ/სთ %1 წამში",

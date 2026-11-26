@@ -81,6 +81,15 @@ Page {
                     }
                     Switch {
                         Layout.fillWidth: true
+                        text: qsTr("Faster requests")
+                        checked: ObdSession.fastRequests
+                        onToggled: ObdSession.fastRequests = checked
+                    }
+                    Hint {
+                        text: qsTr("On CAN cars: several sensors in one request, and telling the adapter how many answers to wait for. Some cheap adapters hang on these; it turns itself off when the adapter stops answering. Applies on the next connection.")
+                    }
+                    Switch {
+                        Layout.fillWidth: true
                         visible: ObdSession.backgroundSupported
                         text: qsTr("Keep the screen on while connected")
                         checked: ObdSession.keepScreenOn

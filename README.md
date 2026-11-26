@@ -115,7 +115,12 @@ it (Android will ask to allow installing apps from the browser).
    connect, turn mobile data off; Android otherwise sends traffic over it.
 3. The app initializes the adapter, finds the protocol and the supported
    sensors, and starts charting the common ones. Each sensor you add makes
-   all of them update less often, as the adapter answers one request at a time.
+   all of them update less often, as the adapter answers one request at a time
+   (on CAN cars, with **Faster requests** in Settings, several at once when
+   the adapter can).
+4. If the adapter stops answering, unplug it for a few seconds: the car's
+   port keeps powering it, and some cheap adapters hang until they lose power.
+   The app then turns **Faster requests** off by itself.
 
 ## Build
 

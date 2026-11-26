@@ -93,6 +93,9 @@ class ObdSession : public QObject
     Q_PROPERTY(bool batteryRestricted READ batteryRestricted NOTIFY backgroundChanged)
     Q_PROPERTY(bool reconnecting READ reconnecting NOTIFY stateChanged)
     Q_PROPERTY(bool autoConnect READ autoConnect WRITE setAutoConnect NOTIFY settingsChanged)
+    // Several PIDs per request and response counts (CAN only); turned off
+    // by itself when the adapter stops answering while they are on.
+    Q_PROPERTY(bool fastRequests READ fastRequests WRITE setFastRequests NOTIFY settingsChanged)
     Q_PROPERTY(bool keepScreenOn READ keepScreenOn WRITE setKeepScreenOn NOTIFY settingsChanged)
     Q_PROPERTY(bool alertsEnabled READ alertsEnabled WRITE setAlertsEnabled NOTIFY settingsChanged)
     Q_PROPERTY(int alertRpm READ alertRpm WRITE setAlertRpm NOTIFY settingsChanged)
@@ -168,6 +171,8 @@ public:
     // (`view/keepScreenOn`).
     bool autoConnect() const { return m_autoConnect; }
     void setAutoConnect(bool on);
+    bool fastRequests() const { return m_fastRequests; }
+    void setFastRequests(bool on);
     bool keepScreenOn() const { return m_keepScreenOn; }
     void setKeepScreenOn(bool on);
     // Connects to the adapter used last (`connect/last`); false if there is none.
@@ -346,6 +351,8 @@ private:
     QTimer m_reconnectTimer;
     QElapsedTimer m_sinceData; // since the car last answered, for giving up on reconnecting
     bool m_autoConnect = true;
+    bool m_fastRequests = true;
+    bool m_fastUsed = false; // this connection sent headers-on requests (ATH1 and after)
     bool m_startConnectDone = false;
     bool m_keepScreenOn = true;
     bool m_screenKeptOn = false;

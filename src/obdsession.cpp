@@ -24,6 +24,7 @@
 
 #include <algorithm>
 #include <iterator>
+#include <memory>
 #include <utility>
 
 #ifdef OBD_HAVE_BLUETOOTH
@@ -92,6 +93,7 @@ ObdSession::ObdSession(QObject *parent)
     m_recordAll = settings.value(QStringLiteral("record/all"), true).toBool();
     m_background = settings.value(QStringLiteral("background/enabled"), true).toBool();
     m_autoConnect = settings.value(QStringLiteral("connect/auto"), true).toBool();
+    m_fastRequests = settings.value(QStringLiteral("connect/fast"), true).toBool();
     m_keepScreenOn = settings.value(QStringLiteral("view/keepScreenOn"), true).toBool();
     m_alertsEnabled = settings.value(QStringLiteral("alerts/enabled"), true).toBool();
     m_alertRpm = settings.value(QStringLiteral("alerts/rpm"), 0).toInt();
@@ -358,6 +360,15 @@ void ObdSession::setAutoConnect(bool on)
         return;
     m_autoConnect = on;
     QSettings().setValue(QStringLiteral("connect/auto"), on);
+    emit settingsChanged();
+}
+
+void ObdSession::setFastRequests(bool on)
+{
+    if (m_fastRequests == on)
+        return;
+    m_fastRequests = on;
+    QSettings().setValue(QStringLiteral("connect/fast"), on);
     emit settingsChanged();
 }
 
@@ -770,12 +781,16 @@ void ObdSession::startTransport(const QString &name, TransportFactory factory, b
     m_batchSingleFrame = false;
     m_batchFailures = 0;
     m_responseCount = false;
+    m_fastUsed = false;
     m_paused = false;
     emit pausedChanged();
     emit infoChanged();
     m_sensors->clear();
     emit sensorCountChanged();
-    m_log->setStringList({});
+    // The log of a failed attempt stays until the user connects again, so
+    // automatic reconnects do not wipe what went wrong (kMaxLogLines caps it).
+    if (newDrive)
+        m_log->setStringList({});
     resetCodes();
     resetDiagnostics();
     m_clock.start();
@@ -889,9 +904,11 @@ void ObdSession::onOpened()
     m_elm.setVerbose(true);
 
     const quint64 generation = m_generation;
-    m_elm.send(QStringLiteral("ATZ"), [this, generation](const Elm327::Reply &reply) {
+    auto resetTimedOut = std::make_shared<bool>(false);
+    m_elm.send(QStringLiteral("ATZ"), [this, generation, resetTimedOut](const Elm327::Reply &reply) {
         if (!isCurrent(generation))
             return;
+        *resetTimedOut = reply.error == QLatin1String("TIMEOUT");
         for (const QString &line : reply.lines) {
             if (line.contains(QLatin1String("ELM")) || line.contains(QLatin1String("STN"))) {
                 m_adapterInfo = line;
@@ -902,7 +919,21 @@ void ObdSession::onOpened()
     }, 5000);
 
     // Echo, linefeeds, spaces and headers off; adaptive timing; automatic protocol.
-    for (const char *command : {"ATE0", "ATL0", "ATS0", "ATH0", "ATAT1", "ATSP0"})
+    // The first command may get lost on a fresh link, but when the next one
+    // goes unanswered too, the adapter itself is stuck: a cheap one can hang
+    // until it loses power, which the car's OBD port never cuts.
+    // The faster requests of an earlier connection may be what hung it, so
+    // they go off too.
+    m_elm.send(QStringLiteral("ATE0"), [this, generation, resetTimedOut](const Elm327::Reply &reply) {
+        if (!isCurrent(generation) || !*resetTimedOut || reply.error != QLatin1String("TIMEOUT"))
+            return;
+        if (m_fastRequests) {
+            setFastRequests(false);
+            appendLog(tr("Faster requests turned off: the adapter stopped answering while they were on"));
+        }
+        fail(tr("The adapter does not answer. Unplug it from the car for a few seconds, then try again."));
+    });
+    for (const char *command : {"ATL0", "ATS0", "ATH0", "ATAT1", "ATSP0"})
         m_elm.send(QString::fromLatin1(command));
 
     m_elm.send(QStringLiteral("ATRV"), [this, generation](const Elm327::Reply &reply) {
@@ -934,8 +965,9 @@ void ObdSession::onOpened()
             // request ask for several PIDs (see pollBatch).
             const int headerChars = elm::canHeaderLength(r.lines.first());
             m_canHeaderChars = headerChars;
-            if (headerChars == 0)
+            if (headerChars == 0 || !m_fastRequests)
                 return;
+            m_fastUsed = true;
             m_elm.send(QStringLiteral("ATH1"), [this, generation, headerChars](const Elm327::Reply &h) {
                 if (!isCurrent(generation) || !h.lines.contains(QStringLiteral("OK")))
                     return;
@@ -1374,6 +1406,15 @@ void ObdSession::recordValue(int row, double t, double value)
 void ObdSession::countFailure(const QString &error)
 {
     if (++m_failStreak >= kFailuresBeforeLost) {
+        // No answer at all, not even NO DATA as when the engine stops: the
+        // adapter itself went quiet. Some cheap ones hang on the faster
+        // requests, so those stay off from now on (Settings turns them on).
+        if (error == QLatin1String("TIMEOUT") && m_fastUsed) {
+            setFastRequests(false);
+            appendLog(tr("Faster requests turned off: the adapter stopped answering while they were on"));
+            fail(tr("The adapter stopped answering. Faster requests are now off; if it does not come back, unplug it from the car for a few seconds."));
+            return;
+        }
         const QString why = error.isEmpty() ? tr("no valid data") : error;
         fail(tr("Lost contact with the car (%1)").arg(why));
     }
